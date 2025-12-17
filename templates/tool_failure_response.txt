@@ -1,0 +1,5 @@
+Tool: [tool name]
+Command: [attempted command]
+Result: [error message]
+Status: FAILED
+Investigation: [what to check next]

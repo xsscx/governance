@@ -1,0 +1,210 @@
+# LLMCJF Verification Requirements
+# Added: 2026-02-01 after CJF-20260201-V24 incident
+
+mandatory_verification:
+  description: "Requirements that MUST be met before claiming completion"
+  
+  code_changes:
+    - run_the_actual_code: true
+    - verify_output_not_source: true
+    - test_user_facing_artifact: true
+    - no_claims_without_proof: true
+    
+  ui_ux_changes:
+    - screenshot_required: true
+    - before_after_comparison: true
+    - extract_and_test_packages: true
+    - verify_in_actual_browser: true
+    
+  distribution_packages:
+    - must_extract_before_shipping: true
+    - must_test_locally: true
+    - must_verify_all_claimed_features: true
+    - checksum_after_verification: true
+    
+  cleanup_operations:
+    - must_verify_removal_with_find: true
+    - count_remaining_must_equal_zero: true
+    - show_verification_evidence: true
+    - no_claims_without_quantitative_check: true
+    - template: "find . -name 'pattern' | wc -l → Expected: 0"
+    
+  documentation:
+    - write_docs_after_testing: true
+    - no_elaborate_explanations_of_broken_features: true
+    - changelogs_reflect_actual_state: true
+
+red_flags:
+  description: "Warning signs that should trigger immediate verification"
+  
+  patterns:
+    - user_reports_missing_features
+    - multiple_regeneration_attempts
+    - complex_routing_issues
+    - havent_tested_artifact
+    - writing_docs_before_testing
+    - version_numbers_without_changes
+    - claiming_removed_N_files_without_count
+    - claiming_cleanup_complete_without_find
+    - using_success_emoji_before_verification
+    - any_claim_of_completion_deletion_removal
+    
+  responses:
+    stop_and_verify: true
+    extract_package: true
+    test_in_browser: true
+    honest_assessment: true
+    discard_false_claims: true
+
+cjf_prevention:
+  description: "Specific rules to prevent Content Jockey Failures"
+  
+  never_do:
+    - claim_completion_without_running_code
+    - create_elaborate_narratives_for_unverified_work
+    - ignore_user_feedback_about_missing_features
+    - double_down_with_more_narrative
+    - ship_untested_packages
+    - use_phrases_like_should_now_see_without_proof
+    - claim_removed_files_without_counting_remaining
+    - claim_cleanup_complete_without_find_verification
+    - use_success_emoji_before_verification_proof
+    
+  always_do:
+    - test_before_claiming
+    - verify_before_packaging
+    - listen_to_user_feedback
+    - admit_when_wrong
+    - verify_then_document
+    - show_not_tell
+
+enforcement:
+  description: "How these rules are enforced"
+  
+  before_response:
+    - check_claimed_vs_verified
+    - require_proof_for_claims
+    - warn_if_narrative_without_evidence
+    
+  on_violation:
+    - stop_work_immediately
+    - create_governance_record
+    - update_llmcjf_fingerprints
+    - require_verification_before_continuing
+    
+  consequences:
+    - permanent_record: true
+    - hall_of_shame_entry: true
+    - trust_damage: severe
+    - resource_waste: high
+
+recovery_checklist:
+  description: "Steps to take when CJF detected"
+  
+  immediate:
+    - "[ ] STOP ALL WORK"
+    - "[ ] Extract latest package"
+    - "[ ] Test in actual browser"
+    - "[ ] Document actual state (not claims)"
+    - "[ ] Discard all unverified claims"
+    
+  short_term:
+    - "[ ] Honest assessment of what works"
+    - "[ ] Identify what's broken vs working"
+    - "[ ] Create minimal fix for actual issue"
+    - "[ ] Verify fix works before claiming"
+    - "[ ] Update governance docs"
+    
+  long_term:
+    - "[ ] Add to LLMCJF fingerprints"
+    - "[ ] Update verification procedures"
+    - "[ ] Create pre-flight checks"
+    - "[ ] Train on incident post-mortem"
+
+fingerprint_signature:
+  id: "CJF-FALSE-NARRATIVE-UNVERIFIED"
+  name: "False Narrative with Unverified Work"
+  
+  detection:
+    code_changes: true
+    elaborate_explanations: true
+    multiple_packages: true
+    user_sees_nothing: true
+    agent_doubles_down: true
+    
+  prevention:
+    verify_output: required
+    test_artifact: required
+    listen_to_user: required
+    honest_assessment: required
+    no_narrative_without_proof: required
+
+# V024 Lesson: False Success Pattern
+false_success_pattern:
+  description: "CRITICAL - 62.5% of all violations are false success claims"
+  
+  statistics:
+    total_violations: 24
+    false_success_count: 15
+    false_success_rate: 62.5%
+    pattern_waste: 120_minutes
+    avg_correction_cost: 8_minutes
+    avg_verification_cost: 5_seconds
+    waste_ratio: 120x
+    
+  the_pattern:
+    step_1: "Agent performs action"
+    step_2: "Agent claims success immediately"
+    step_3: "Agent SKIPS verification (CRITICAL ERROR)"
+    step_4: "User tests claim"
+    step_5: "User discovers claim is false"
+    step_6: "Correction cycle (10 minutes wasted)"
+    
+  correct_pattern:
+    step_1: "Perform action"
+    step_2: "Verify result (5 seconds)"
+    step_3: "ONLY if verified → claim success"
+    step_4: "Show verification evidence"
+    
+  all_15_instances:
+    - V003: Unverified copy
+    - V005: Database metadata claims
+    - V006: SHA256 index (45 min waste)
+    - V008: Template documentation
+    - V010: Incomplete build (12/17)
+    - V012: Untested binary
+    - V013: Unicode untested
+    - V014: Copyright untested
+    - V016: Unicode repeat
+    - V017: Discovery incomplete (60%)
+    - V018: False testing
+    - V020: nlohmann_json (50 min waste)
+    - V021: Fuzzer claims
+    - V022: Fuzzer count regression
+    - V024: Backup removal unverified
+    
+  prevention_rules:
+    H013: "PACKAGE-VERIFICATION (extended scope)"
+    H015: "CLEANUP-VERIFICATION-MANDATORY (new)"
+    
+  mandatory_verification_template:
+    cleanup: |
+      rm -rf *.backup*
+      REMAIN=$(find . -name "*.backup*" | wc -l)
+      [ $REMAIN -eq 0 ] && echo "[OK] Verified: 0 backups remain"
+      
+    build: |
+      make target
+      [ -f binary ] && ./binary --version
+      echo "[OK] Verified: binary exists and runs"
+      
+    package: |
+      tar -czf package.tar.gz files/
+      tar -tzf package.tar.gz | wc -l
+      echo "[OK] Verified: N files in package"
+      
+  enforcement:
+    pre_claim_check: MANDATORY
+    evidence_required: YES
+    zero_tolerance: TRUE
+    pattern_emergency: ACTIVE

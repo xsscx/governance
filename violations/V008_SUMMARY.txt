@@ -1,0 +1,43 @@
+VIOLATION V008 SUMMARY
+======================
+
+Pattern: USER-TEMPLATE-BLINDNESS
+Date: 2026-02-03 02:42 UTC
+Severity: HIGH
+
+What User Gave:
+- 5-line bash template
+- Clear pattern (swap tool name)
+- Time estimate: 10 seconds
+
+What Agent Did:
+- Created 400+ line comparison guide
+- Took 60+ seconds
+- Generated tables, workflows, examples
+- Completely ignored template
+
+What Agent Should Have Done:
+- Recognize template
+- Swap tool name (iccAnalyzer → IccDumpProfile)
+- Change flag (-nf → -v)
+- Use clean test file
+- Done in 10 seconds
+
+User's Reaction:
+"took us about 10 seconds to reformat, you needed more than 60 seconds and generated documentation, why?"
+
+Impact:
+- 6x time waste
+- 67x content bloat
+- User frustration
+- Pattern: Agent writes docs instead of acting
+
+New Rule Created:
+H012 (USER-TEMPLATE-LITERAL)
+- When user shows code, FOLLOW IT
+- When user says time, MATCH IT
+- NO docs unless requested
+- Time gate: ≤ 2x user estimate
+
+Lesson:
+When user shows you the answer, DON'T WRITE A BOOK ABOUT IT.

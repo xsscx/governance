@@ -1,0 +1,272 @@
+#!/bin/bash
+# Pre-Push Git Hook - Enforces LLMCJF Git Push Policy
+# Implements: profiles/git-push-policy.yaml (GIT-001, GIT-002, GIT-003, GIT-004)
+# Purpose: Prevent unauthorized git push operations (TIER 0 H016 enforcement)
+#
+# Installation:
+#   ./llmcjf/scripts/install-git-hooks.sh
+# OR manually:
+#   cp llmcjf/hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+#
+# This hook runs BEFORE git push and can abort the operation
+
+set -uo pipefail
+
+# Terminal colors (ASCII-only)
+RED="[RED]"
+GREEN="[OK]"
+YELLOW="[WARN]"
+BLUE="[INFO]"
+
+# Exit codes
+EXIT_ABORT=1
+EXIT_ALLOW=0
+
+# Policy configuration
+AUTHORIZATION_FILE="/tmp/.git-push-authorized-$$"
+SESSION_STATE_DIR="$HOME/.copilot/session-state"
+
+# Hook receives: <remote> <url> as arguments
+REMOTE_NAME="${1:-origin}"
+REMOTE_URL="${2:-unknown}"
+
+# Banner
+cat <<EOF
+
+========================================================================
+PRE-PUSH HOOK: Git Push Authorization Check
+========================================================================
+
+Policy: LLMCJF Git Push Policy (GIT-001 through GIT-004)
+Rule: TIER 0 H016 - NEVER push without explicit user authorization
+Remote: $REMOTE_NAME
+URL: $REMOTE_URL
+
+EOF
+
+# Function: Check for authorization file
+check_authorization_file() {
+    if [ -f "$AUTHORIZATION_FILE" ]; then
+        local auth_time=$(stat -c%Y "$AUTHORIZATION_FILE" 2>/dev/null || stat -f%m "$AUTHORIZATION_FILE" 2>/dev/null || echo 0)
+        local current_time=$(date +%s)
+        local age_seconds=$((current_time - auth_time))
+        
+        # Authorization expires after 60 seconds
+        if [ $age_seconds -lt 60 ]; then
+            echo "$GREEN Authorization file found (age: ${age_seconds}s)"
+            echo "$GREEN Authorization verified - proceeding with push"
+            rm -f "$AUTHORIZATION_FILE"
+            return 0
+        else
+            echo "$YELLOW Authorization file expired (age: ${age_seconds}s > 60s)"
+            rm -f "$AUTHORIZATION_FILE"
+            return 1
+        fi
+    fi
+    return 1
+}
+
+# Function: Check for "do not push" markers
+check_do_not_push_markers() {
+    local markers_found=0
+    
+    # Check for explicit prohibition in session state
+    if [ -d "$SESSION_STATE_DIR" ]; then
+        if find "$SESSION_STATE_DIR" -name "*do-not-push*" -o -name "*local-only*" 2>/dev/null | grep -q .; then
+            echo "$RED Found 'do not push' marker in session state"
+            markers_found=1
+        fi
+    fi
+    
+    # Check for prohibition in commit messages (last 5 commits)
+    if git log -5 --pretty=%B 2>/dev/null | grep -qiE "(do not push|don't push|local only|no push)"; then
+        echo "$RED Found 'do not push' instruction in recent commit messages"
+        markers_found=1
+    fi
+    
+    # Check for prohibition in llmcjf governance files
+    if [ -f "llmcjf/GOVERNANCE_DASHBOARD.md" ]; then
+        if grep -qiE "(push.*prohibited|local.*only|do not push)" "llmcjf/GOVERNANCE_DASHBOARD.md" 2>/dev/null; then
+            echo "$RED Found push prohibition in GOVERNANCE_DASHBOARD.md"
+            markers_found=1
+        fi
+    fi
+    
+    return $markers_found
+}
+
+# Function: Interactive authorization check
+interactive_authorization() {
+    echo ""
+    echo "$YELLOW =========================================="
+    echo "$YELLOW  AUTHORIZATION REQUIRED"
+    echo "$YELLOW =========================================="
+    echo ""
+    echo "This push operation requires explicit authorization."
+    echo ""
+    echo "Remote: $REMOTE_NAME"
+    echo "URL: $REMOTE_URL"
+    echo "Branch: $(git branch --show-current 2>/dev/null || echo 'unknown')"
+    echo "Commits: $(git rev-list --count @{u}..HEAD 2>/dev/null || echo 'unknown')"
+    echo ""
+    echo "Policy: LLMCJF Git Push Policy (TIER 0 H016)"
+    echo "Rule: NEVER push without explicit user request"
+    echo ""
+    
+    # Show what will be pushed
+    echo "Commits to be pushed:"
+    git log --oneline @{u}..HEAD 2>/dev/null | head -5 | sed 's/^/  /' || echo "  (unable to determine)"
+    local commit_count=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo 0)
+    if [ "$commit_count" -gt 5 ]; then
+        echo "  ... and $((commit_count - 5)) more commits"
+    fi
+    echo ""
+    
+    # Ask for authorization
+    echo "Did the user explicitly request this push? (yes/no)"
+    read -r -p "> " response
+    
+    case "$response" in
+        yes|YES|y|Y)
+            echo ""
+            echo "$YELLOW Second confirmation required (TIER 0 safety gate)"
+            echo "Confirm push to $REMOTE_NAME ($REMOTE_URL)? (yes/no)"
+            read -r -p "> " confirm
+            
+            case "$confirm" in
+                yes|YES|y|Y)
+                    echo "$GREEN Authorization granted - push allowed"
+                    return 0
+                    ;;
+                *)
+                    echo "$RED Second confirmation denied - push ABORTED"
+                    return 1
+                    ;;
+            esac
+            ;;
+        *)
+            echo "$RED Authorization denied - push ABORTED"
+            return 1
+            ;;
+    esac
+}
+
+# Function: Log violation
+log_violation() {
+    local reason="$1"
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ" | tr ':' '-')
+    local violation_file="llmcjf/violations/V_PUSH_ATTEMPT_${timestamp}.md"
+    
+    # Create violation record if llmcjf directory exists
+    if [ -d "llmcjf/violations" ]; then
+        cat > "$violation_file" <<EOF
+# Git Push Attempt Blocked
+
+**Timestamp:** $timestamp  
+**Violation:** GIT-001 (No Push Without Explicit Request)  
+**Severity:** CRITICAL  
+**Status:** PREVENTED BY PRE-PUSH HOOK
+
+## Details
+
+- Remote: $REMOTE_NAME
+- URL: $REMOTE_URL
+- Branch: $(git branch --show-current 2>/dev/null || echo 'unknown')
+- Reason: $reason
+- Commits blocked: $(git rev-list --count @{u}..HEAD 2>/dev/null || echo 'unknown')
+
+## Action Taken
+
+Pre-push hook ABORTED the push operation per TIER 0 H016 policy.
+
+## Commits That Were Not Pushed
+
+\`\`\`
+$(git log --oneline @{u}..HEAD 2>/dev/null || echo "Unable to determine commits")
+\`\`\`
+
+## Policy Reference
+
+- Policy: llmcjf/profiles/git-push-policy.yaml
+- Rule: GIT-001 (No Push Without Explicit Request)
+- Enforcement: TIER 0 H016 (absolute rule, cannot be overridden)
+
+## Resolution
+
+If push is needed:
+1. User must explicitly request push
+2. Run: touch /tmp/.git-push-authorized-\$\$
+3. Run: git push (within 60 seconds)
+
+Or use authorization helper:
+\`\`\`bash
+./llmcjf/scripts/authorize-push.sh
+\`\`\`
+
+---
+Auto-generated by pre-push hook
+EOF
+        echo "$BLUE Violation logged: $violation_file"
+    fi
+}
+
+# Main enforcement logic
+main() {
+    echo "$BLUE Checking push authorization..."
+    echo ""
+    
+    # Step 1: Check for authorization file (fast path)
+    if check_authorization_file; then
+        echo ""
+        echo "$GREEN =========================================="
+        echo "$GREEN  PUSH AUTHORIZED - Proceeding"
+        echo "$GREEN =========================================="
+        exit $EXIT_ALLOW
+    fi
+    
+    # Step 2: Check for explicit "do not push" markers
+    echo "$BLUE Checking for 'do not push' markers..."
+    if check_do_not_push_markers; then
+        echo ""
+        echo "$RED =========================================="
+        echo "$RED  PUSH BLOCKED: Explicit prohibition found"
+        echo "$RED =========================================="
+        echo ""
+        echo "User has explicitly requested LOCAL ONLY commits."
+        echo "Push operation ABORTED per GIT-002 policy."
+        echo ""
+        log_violation "Explicit 'do not push' marker found"
+        exit $EXIT_ABORT
+    fi
+    echo "$GREEN No 'do not push' markers found"
+    echo ""
+    
+    # Step 3: Interactive authorization check
+    echo "$BLUE No authorization file found - interactive check required"
+    if interactive_authorization; then
+        echo ""
+        echo "$GREEN =========================================="
+        echo "$GREEN  PUSH AUTHORIZED - Proceeding"
+        echo "$GREEN =========================================="
+        echo ""
+        echo "Next time, skip this prompt by running:"
+        echo "  ./llmcjf/scripts/authorize-push.sh"
+        echo ""
+        exit $EXIT_ALLOW
+    else
+        echo ""
+        echo "$RED =========================================="
+        echo "$RED  PUSH ABORTED"
+        echo "$RED =========================================="
+        echo ""
+        echo "To authorize push, run:"
+        echo "  ./llmcjf/scripts/authorize-push.sh"
+        echo "  git push"
+        echo ""
+        log_violation "Interactive authorization denied"
+        exit $EXIT_ABORT
+    fi
+}
+
+# Run main enforcement
+main "$@"

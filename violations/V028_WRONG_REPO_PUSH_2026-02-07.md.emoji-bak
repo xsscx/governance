@@ -1,0 +1,204 @@
+# V028: Wrong Repository Push Attempt (2026-02-07)
+
+**Violation Date:** 2026-02-07T03:42:07Z  
+**Session ID:** 54a19dc9-a183-49fb-b20c-d34a809d2edf  
+**Severity:** CRITICAL  
+**Category:** Context Verification Failure + H016 Violation  
+**Status:** User-Corrected (Agent Failed)
+
+## Violation Summary
+
+Agent attempted to push wrong repository (parent instead of submodule), wrong branch (master instead of main), and wrong scale (83,501 objects instead of 8) to https://github.com/xsscx/governance.git.
+
+## What Happened
+
+### Agent Action (WRONG)
+```bash
+# Executed from: /home/xss/copilot/iccLibFuzzer
+git push origin master --force-with-lease
+```
+
+**Result:**
+- Repository: iccLibFuzzer (WRONG - should be llmcjf)
+- Branch: master (WRONG - should be main)
+- Objects: 83,501 (WRONG - should be 8)
+- Compression: 43,055 objects compressed
+- Status: Interrupted by user
+
+### Correct Execution (User Did)
+```bash
+# Executed from: /home/xss/copilot/iccLibFuzzer/llmcjf
+git push origin main --force-with-lease
+```
+
+**Result:**
+- Repository: llmcjf (CORRECT)
+- Branch: main (CORRECT)
+- Objects: 8 (CORRECT)
+- Delta: 7 reused
+- Status: ✅ Success (d2295ff..73173f2)
+
+## Root Cause Analysis
+
+### Immediate Cause
+Failed to verify working directory and branch context before executing push.
+
+### Contributing Factors
+1. **No Context Verification**: Did not run `pwd && git branch` before push
+2. **H016 Violation**: Required ask_user confirmation but didn't verify WHICH repo/branch
+3. **H011 Violation**: Could have checked documentation/status before push
+4. **Assumption Failure**: Assumed correct context without verification
+
+### Pattern Match
+This matches **CONTEXT_CONFUSION** pattern:
+- Previous: V020 (pushed to wrong branch - CFL)
+- Previous: V026 (pushed without ask_user)
+- Current: V028 (wrong repo + wrong branch + wrong scale)
+
+## Impact Assessment
+
+### Actual Impact (User Prevented)
+- ✅ User corrected before damage
+- ✅ Correct push completed successfully
+- ⚠️ Wasted time and bandwidth (83,501 objects compressed)
+
+### Potential Impact (If Not Caught)
+- 🔴 Would have pushed 83,501 objects to wrong repository
+- 🔴 Would have created `master` branch in governance repo
+- 🔴 Would have polluted governance repo with iccLibFuzzer content
+- 🔴 Would have required force-delete and cleanup
+
+## Heuristics Violated
+
+### H016: NEVER PUSH WITHOUT ask_user CONFIRMATION
+**Status:** PARTIALLY VIOLATED  
+- ✅ Used ask_user to confirm push
+- ❌ But confirmed wrong repo/branch
+- ❌ ask_user question was: "Confirm push to https://github.com/xsscx/governance.git on branch master?"
+- ❌ Should have been: "Confirm push to https://github.com/xsscx/governance.git on branch main (from llmcjf submodule)?"
+
+### H011: DOCUMENTATION-CHECK-MANDATORY
+**Status:** VIOLATED  
+Could have checked git status/branch before push.
+
+### NEW: H019 (Created from this violation)
+
+## Lessons Learned
+
+### What I Did Wrong
+
+1. **Context Blindness**
+   - Was in parent repo (`/home/xss/copilot/iccLibFuzzer`)
+   - Thought I was in submodule (`llmcjf/`)
+   - Never verified with `pwd`
+
+2. **Branch Name Assumption**
+   - Parent uses `master`
+   - Submodule uses `main`
+   - Assumed they matched
+
+3. **Scale Mismatch Ignored**
+   - Saw "83,501 objects" vs expected ~10
+   - Did not recognize this as error signal
+   - Should have stopped at "Enumerating objects: 83501"
+
+4. **ask_user Question Was Wrong**
+   - Confirmed repo URL ✅
+   - Confirmed branch name ❌ (wrong branch)
+   - Missed context ❌ (which repo/directory)
+
+### What Should Have Happened
+
+**Pre-Push Verification Protocol:**
+```bash
+# Step 1: Verify context
+pwd                           # Where am I?
+git remote -v                 # What's the remote?
+git branch --show-current     # What branch?
+git status --short            # What's changed?
+
+# Step 2: Verify object count
+git rev-list --count origin/main..HEAD  # How many commits?
+
+# Step 3: ask_user with FULL context
+ask_user:
+  "Push to xsscx/governance.git?
+   - Repository: llmcjf (submodule)
+   - Branch: main
+   - Commits: 1 (73173f2)
+   - Objects: ~8"
+
+# Step 4: Execute from correct directory
+cd llmcjf
+git push origin main --force-with-lease
+```
+
+## Prevention Rules
+
+### H019: CONTEXT-VERIFICATION-MANDATORY (NEW)
+
+**Before ANY git push:**
+1. **VERIFY directory**: `pwd` must match intended repo
+2. **VERIFY branch**: `git branch --show-current` must match target
+3. **VERIFY remote**: `git remote -v` must match intended URL
+4. **VERIFY scale**: Object count must be reasonable (< 100 for typical push)
+5. **INCLUDE in ask_user**: Directory, branch, commit count, object estimate
+
+**Enforcement:**
+- NEVER push without running: `pwd && git branch --show-current && git remote -v`
+- ALWAYS include output in ask_user confirmation
+- STOP if object count > 1000 (investigate why)
+
+### Updated H016: Enhanced Confirmation
+
+**ask_user prompt MUST include:**
+- Repository URL ✅ (already doing)
+- Branch name ✅ (already doing)
+- **NEW:** Current directory (pwd)
+- **NEW:** Current branch (git branch --show-current)
+- **NEW:** Commit count
+- **NEW:** Estimated object count
+
+## Related Violations
+
+- **V020:** Wrong branch push (CFL instead of source-of-truth)
+- **V026:** Push without ask_user (CATASTROPHIC - created H016, violated 2 min later)
+- **V028:** Wrong repo push (this violation - CRITICAL)
+
+**Pattern:** Git push operations have 30% failure rate (3 of ~10 pushes)
+
+## Remediation Status
+
+- ✅ User corrected the error
+- ✅ Correct push completed
+- ✅ V028 documented
+- ⏳ H019 created (pending integration)
+- ⏳ Governance dashboard update (pending)
+- ⏳ Violation counters update (pending)
+
+## User Assessment
+
+**User Action:** Corrected command and executed successfully.
+
+**User Directive:** "record the significant violation, update the counters and document what you learned in governance documentation and llmcjf and report"
+
+## Cost to User
+
+- **Time Wasted:** ~2 minutes (interrupting push, correcting command)
+- **Bandwidth Wasted:** ~100 MB (83,501 objects counted/compressed before interrupt)
+- **Trust Impact:** Another git push failure (3rd in recent sessions)
+- **Pattern Recognition:** Agent cannot verify context before destructive operations
+
+## Signature
+
+**Violation:** V028  
+**Type:** Context Verification Failure  
+**Severity:** CRITICAL  
+**Heuristics Violated:** H016 (partial), H011, H019 (new)  
+**User Intervention Required:** YES (corrected)  
+**Remediation:** Complete (user executed correct command)  
+**Documentation:** Complete  
+**Integration:** Pending  
+
+---
+*This violation demonstrates systematic failure to verify context before destructive operations. Third git push failure in recent sessions suggests fundamental gap in pre-operation verification protocol.*

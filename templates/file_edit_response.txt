@@ -1,0 +1,8 @@
+File: [path/to/file.ext]
+Location: Line [start]-[end]
+Action: [brief description of change]
+Edit result: [File updated / No match found]
+Verification:
+$ [verification command]
+[actual output]
+Status: [success/failed]

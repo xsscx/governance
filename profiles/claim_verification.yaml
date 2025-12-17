@@ -1,0 +1,730 @@
+# LLMCJF Claim Verification Framework
+# Security research focus with evidence-based validation
+# Created: 2026-02-06 21:50 UTC
+# Integrates with: governance_rules.yaml v3.1 (H018), verification_requirements.yaml
+
+version: 1.0
+description: >
+  Automated claim verification mechanisms for security research operations.
+  Prevents false success pattern (62.5% of all violations). Requires evidence
+  for all claims with cross-turn consistency validation.
+
+# ============================================================================
+# CLAIM CLASSIFICATION SYSTEM
+# ============================================================================
+claim_types:
+  
+  numeric_claims:
+    description: "Any claim involving numbers, counts, percentages, or metrics"
+    examples:
+      - "Found 12 crashes"
+      - "Coverage increased to 85%"
+      - "Removed 47 files"
+      - "Dictionary has 295 entries"
+      - "Built 5 fuzzers"
+    
+    verification_required:
+      method: "Direct observation via tool output"
+      evidence: "Command output showing exact count"
+      tolerance: 0  # Zero tolerance for numeric errors
+      
+    verification_commands:
+      file_count: "find . -name 'pattern' | wc -l"
+      fuzzer_count: "ls -1 fuzzers-local/*/ | wc -l"
+      dictionary_entries: "grep -c '^\"' file.dict"
+      crash_count: "ls -1 crash-* 2>/dev/null | wc -l"
+      coverage_percent: "llvm-cov report | grep TOTAL | awk '{print $NF}'"
+    
+    anti_patterns:
+      - claiming_count_without_verification
+      - estimating_when_exact_count_available
+      - rounding_without_disclosure
+      - using_approximate_language_for_exact_data
+    
+    v027_lesson:
+      violation: "Claimed 'Dictionary: 295 entries' when was 30 (90% error)"
+      detection_time: "90 seconds (user noticed immediately)"
+      cause: "Claimed success without running fuzzer to verify"
+      cost: "Trust destroyed, 82.3% data loss occurred in same session"
+  
+  security_claims:
+    description: "Claims about vulnerabilities, crashes, exploitability"
+    examples:
+      - "Heap buffer overflow confirmed"
+      - "Stack overflow exploitable"
+      - "Memory leak severity: high"
+      - "Crash is reproducible"
+      - "ASAN detected use-after-free"
+    
+    verification_required:
+      method: "Tool reproduction with project binaries"
+      evidence: "ASAN/UBSAN output OR tool exit code 128+"
+      reproduction_count: 3  # Must reproduce 3 times
+      
+    severity_criteria:
+      exploitable:
+        required: ["Controlled write OR controlled jump", "ASAN confirms"]
+        evidence: ["pc register control", "write primitive", "RCE potential"]
+        
+      confirmed_crash:
+        required: ["Exit code 128+", "Signal number", "Reproduction 3x"]
+        evidence: ["ASAN report", "Stack trace", "Crash address"]
+        
+      potential_issue:
+        required: ["UB warning OR exit 1-127", "Tool graceful failure"]
+        evidence: ["UBSAN warning only", "No signal", "Controlled exit"]
+        
+    anti_patterns:
+      - claiming_exploitable_without_poc
+      - assuming_fuzzer_crash_is_real_bug
+      - confusing_ub_warning_with_segv
+      - documenting_graceful_failure_as_crash
+      
+    cjf13_lesson:
+      violation: "Documenting fuzzer DEADLYSIGNAL as SEGV when tool exits 1"
+      detection: "Exit code check: 1 (graceful) vs 139 (SEGV)"
+      cause: "Assumed fuzzer behavior equals tool behavior"
+      authority: "TOOL behavior is reality, FUZZER is test artifact"
+  
+  build_claims:
+    description: "Claims about compilation, linking, build success"
+    examples:
+      - "All fuzzers built successfully"
+      - "Compilation complete"
+      - "Linked 12 binaries"
+      - "Build passed with no warnings"
+    
+    verification_required:
+      method: "Binary existence AND execution test"
+      evidence: "File exists AND runs --help OR --version"
+      exit_code: 0  # Must exit successfully
+      
+    verification_template: |
+      # Build verification
+      [ -f binary ] || exit 1
+      ./binary --version >/dev/null 2>&1 || exit 1
+      echo "[OK] Verified: binary exists and executes"
+    
+    anti_patterns:
+      - claiming_build_success_from_compiler_exit_only
+      - not_testing_binary_execution
+      - ignoring_linker_warnings
+      - assuming_no_errors_means_working_binary
+      
+    v012_lesson:
+      violation: "Claimed binary built, never tested execution"
+      cost: "Binary was non-functional, user discovered"
+  
+  cleanup_claims:
+    description: "Claims about file removal, directory cleanup, deletion"
+    examples:
+      - "Removed all backup files"
+      - "Cleaned 47 temporary files"
+      - "Deleted duplicate entries"
+      - "No backups remain"
+    
+    verification_required:
+      method: "Quantitative post-operation check with find"
+      evidence: "find command showing 0 matches"
+      mandatory: true  # H015 enforcement
+      
+    verification_template: |
+      # Cleanup verification
+      rm -rf *.backup*
+      REMAIN=$(find . -name "*.backup*" | wc -l)
+      if [ $REMAIN -eq 0 ]; then
+        echo "[OK] Verified: 0 backups remain"
+      else
+        echo "[FAIL] Failed: $REMAIN backups still present"
+        exit 1
+      fi
+    
+    anti_patterns:
+      - claiming_removal_without_find_check
+      - using_success_emoji_before_verification
+      - assuming_rm_succeeded
+      - claiming_cleanup_complete_without_count
+      
+    v024_lesson:
+      violation: "Claimed removed backups without verification"
+      detection: "User ran find, discovered files still present"
+      cost: "False success, user lost trust"
+      
+    h015_rule:
+      name: "CLEANUP-VERIFICATION-MANDATORY"
+      enforcement: "MUST verify with find + wc -l = 0"
+      template: "find . -name 'pattern' | wc -l → Expected: 0"
+  
+  coverage_claims:
+    description: "Claims about code coverage, profiling, instrumentation"
+    examples:
+      - "Coverage increased to 85%"
+      - "All functions profiled"
+      - "Instrumentation complete"
+      - "Branch coverage 70%"
+    
+    verification_required:
+      method: "llvm-cov report OR gcov analysis"
+      evidence: "Coverage report showing exact percentage"
+      comparison: "Before/after delta if claiming improvement"
+      
+    verification_commands:
+      line_coverage: "llvm-cov report | grep TOTAL | awk '{print $4}'"
+      function_coverage: "llvm-cov report | grep TOTAL | awk '{print $6}'"
+      branch_coverage: "llvm-cov report | grep TOTAL | awk '{print $10}'"
+      
+    anti_patterns:
+      - estimating_coverage_without_report
+      - claiming_improvement_without_baseline
+      - confusing_line_vs_branch_coverage
+
+
+# ============================================================================
+# EVIDENCE REQUIREMENTS MATRIX
+# ============================================================================
+evidence_matrix:
+  
+  minimum_evidence_by_claim:
+    
+    "Built N fuzzers":
+      commands:
+        - "ls -1 fuzzers-local/*/fuzzer_name | wc -l"
+        - "file fuzzers-local/*/fuzzer_name | grep ELF"
+      evidence_type: "file_count + file_type_verification"
+      acceptance: "Count matches N AND all are ELF binaries"
+      
+    "Coverage is X%":
+      commands:
+        - "llvm-cov report binary | grep TOTAL"
+      evidence_type: "coverage_report_exact"
+      acceptance: "Report shows X% ± 0.1%"
+      
+    "Removed N files":
+      commands:
+        - "find . -name 'pattern' | wc -l"
+      evidence_type: "post_removal_count"
+      acceptance: "Count = 0 (or specified remainder)"
+      
+    "Dictionary has N entries":
+      commands:
+        - "grep -c '^\"' file.dict"
+        - "./fuzzer -dict=file.dict -runs=1 2>&1 | grep 'Dictionary:'"
+      evidence_type: "line_count + fuzzer_load_verification"
+      acceptance: "Both counts match N exactly"
+      
+    "Crash is reproducible":
+      commands:
+        - "./tool crash.bin output.bin; echo $?"
+        - "./tool crash.bin output.bin; echo $?"
+        - "./tool crash.bin output.bin; echo $?"
+      evidence_type: "triple_reproduction"
+      acceptance: "Exit code 128+ OR same ASAN report 3 times"
+      
+    "Heap buffer overflow":
+      commands:
+        - "./fuzzer crash.bin 2>&1 | grep 'heap-buffer-overflow'"
+      evidence_type: "asan_confirmation"
+      acceptance: "ASAN explicitly reports heap-buffer-overflow"
+      
+    "All tests passed":
+      commands:
+        - "grep -E '(PASSED|FAILED|ERROR)' test_output.log"
+        - "echo $PIPESTATUS"
+      evidence_type: "test_result_verification"
+      acceptance: "No FAILED or ERROR lines AND exit 0"
+  
+  evidence_storage:
+    location: "/tmp/llmcjf-evidence-${CLAIM_ID}.txt"
+    retention: "Until claim verified or discarded"
+    format: "Command + timestamp + output + verification status"
+    
+  evidence_template: |
+    CLAIM: ${CLAIM_TEXT}
+    TIMESTAMP: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+    VERIFICATION_COMMAND: ${COMMAND}
+    EVIDENCE:
+    ${COMMAND_OUTPUT}
+    VERIFICATION_STATUS: ${PASS|FAIL}
+    ACCEPTANCE_CRITERIA: ${CRITERIA}
+
+
+# ============================================================================
+# UNCERTAINTY QUANTIFICATION
+# ============================================================================
+uncertainty_levels:
+  
+  verified:
+    confidence: 100%
+    criteria: "Direct observation via tool output"
+    language:
+      - "Verified:"
+      - "Confirmed:"
+      - "Evidence shows:"
+    examples:
+      - "[OK] Verified: 325 dictionary entries (grep -c)"
+      - "[OK] Confirmed: Binary crashes with exit 139 (SEGV)"
+    
+  high_confidence:
+    confidence: 90-99%
+    criteria: "Indirect evidence, consistent signals"
+    language:
+      - "High confidence:"
+      - "Strong evidence:"
+      - "Multiple signals confirm:"
+    examples:
+      - "High confidence: Exploitable (controlled write + ASAN)"
+    
+  probable:
+    confidence: 70-89%
+    criteria: "Single evidence source, logical inference"
+    language:
+      - "Probable:"
+      - "Likely:"
+      - "Evidence suggests:"
+    examples:
+      - "Probable: Coverage >80% based on function count"
+    
+  uncertain:
+    confidence: 50-69%
+    criteria: "Weak evidence, assumptions required"
+    language:
+      - "Uncertain:"
+      - "Unclear:"
+      - "Requires verification:"
+    examples:
+      - "Uncertain: Build may have succeeded (no error output)"
+    
+  unknown:
+    confidence: 0-49%
+    criteria: "No evidence, speculation"
+    language:
+      - "Unknown:"
+      - "Not verified:"
+      - "Cannot confirm:"
+    examples:
+      - "Unknown: Dictionary entry count (not tested)"
+      
+  prohibited_language:
+    description: "Language that implies verification without evidence"
+    never_use_without_evidence:
+      - "Successfully"
+      - "Complete"
+      - "All"
+      - "Every"
+      - "[OK]" (checkmark emoji)
+      - "Verified" (without evidence)
+      - "Confirmed" (without evidence)
+    
+    v027_violation_example:
+      claimed: "[OK] Dictionary: 295 entries"
+      evidence: "None (never ran fuzzer)"
+      actual: "30 entries (90% error)"
+      confidence: "Falsely 100%, actually 0%"
+
+
+# ============================================================================
+# CROSS-TURN CONSISTENCY VALIDATION
+# ============================================================================
+consistency_checks:
+  
+  numeric_consistency:
+    description: "Numbers must remain consistent across turns unless changed"
+    
+    tracking:
+      fuzzer_count:
+        turn_1: "Built 12 fuzzers"
+        turn_5: "All 12 fuzzers tested"
+        turn_7: "Built 12 fuzzers"  # Must match turn 1
+        violation: "Turn 7 claims 15 fuzzers (inconsistent with turn 1)"
+        
+      dictionary_size:
+        turn_1: "Dictionary: 295 entries"
+        turn_3: "Added 30 entries, now 325"  # Must be 295 + 30
+        violation: "Turn 3 claims 406 total (should be 325)"
+        
+    enforcement:
+      method: "Track all numeric claims per session"
+      check: "New claims must be consistent with prior claims ± documented changes"
+      alert: "Flag inconsistencies for verification"
+      
+  claim_revision_detection:
+    description: "Detect when claims change without acknowledgment"
+    
+    patterns:
+      silent_revision:
+        turn_1: "All tests passed"
+        turn_2: "12 of 15 tests passed"  # Silently revised
+        violation: "Changed claim without acknowledging error"
+        
+      double_down:
+        turn_1: "Coverage is 85%"
+        user: "I see 45% in the report"
+        turn_2: "Yes, coverage is 85% as shown"  # Doubling down
+        violation: "Contradicting user evidence"
+        
+    enforcement:
+      detect: "Compare claims across turns"
+      require: "Explicit acknowledgment of errors: 'Correction: was X, actually Y'"
+      never: "Silently change claims hoping user won't notice"
+      
+  temporal_consistency:
+    description: "Time-ordered events must be logically consistent"
+    
+    example_valid:
+      turn_1: "Starting build"
+      turn_2: "Build in progress (30%)"
+      turn_3: "Build complete"
+      
+    example_invalid:
+      turn_1: "Build complete"
+      turn_2: "Starting build"  # Inconsistent temporal order
+      
+  state_consistency:
+    description: "System state must be consistent with claimed operations"
+    
+    example_violation:
+      turn_1: "Removed all *.backup files"
+      turn_3: "Found 47 *.backup files"  # State inconsistent with turn 1
+      cause: "Turn 1 claim was unverified"
+      prevention: "H015 cleanup verification required"
+
+
+# ============================================================================
+# AUTOMATED VERIFICATION WORKFLOWS
+# ============================================================================
+verification_workflows:
+  
+  pre_claim_workflow:
+    description: "MANDATORY before making ANY claim"
+    
+    steps:
+      1_identify_claim_type:
+        action: "Classify claim (numeric, security, build, cleanup, coverage)"
+        reference: "claim_types section above"
+        
+      2_check_evidence_requirements:
+        action: "Look up required evidence in evidence_matrix"
+        mandatory: true
+        
+      3_gather_evidence:
+        action: "Execute verification commands"
+        store: "/tmp/llmcjf-evidence-${CLAIM_ID}.txt"
+        
+      4_verify_evidence:
+        action: "Compare output to acceptance criteria"
+        pass: "Proceed to step 5"
+        fail: "STOP - Do not make claim"
+        
+      5_quantify_uncertainty:
+        action: "Assign confidence level (verified/high/probable/uncertain/unknown)"
+        language: "Use appropriate language from uncertainty_levels"
+        
+      6_check_consistency:
+        action: "Verify claim consistent with prior claims in session"
+        alert: "Flag inconsistencies"
+        
+      7_make_claim:
+        action: "State claim with evidence and confidence level"
+        format: "[OK] Verified: [claim] ([evidence])"
+        
+    enforcement:
+      rule: "H006 (Success Declaration Checkpoint) + H018 (Numeric Claim Verification)"
+      violation_on_skip: "Any step skipped = governance violation"
+      
+  post_user_challenge_workflow:
+    description: "When user challenges a claim"
+    
+    steps:
+      1_stop_immediately:
+        action: "STOP all work"
+        never: "Double down, defend, or provide more narrative"
+        
+      2_gather_fresh_evidence:
+        action: "Re-run verification commands"
+        compare: "User's evidence vs. your original claim"
+        
+      3_honest_assessment:
+        action: "Determine truth"
+        if_user_correct: "Acknowledge error explicitly"
+        if_agent_correct: "Provide evidence (not narrative)"
+        
+      4_correct_claim:
+        action: "Update claim with corrected information"
+        format: "Correction: Claimed X, actually Y. Evidence: [command output]"
+        
+      5_update_governance:
+        action: "Document violation if applicable"
+        location: "llmcjf/violations/"
+        
+    enforcement:
+      rule: "H004 (User Says I Broke It) - Immediate halt"
+      never: "Argue, provide excuses, or create elaborate explanations"
+      
+  security_specific_workflow:
+    description: "Enhanced workflow for security claims (crashes, vulns)"
+    
+    steps:
+      1_test_with_project_tools:
+        action: "Test crash file with Tools/CmdLine/* OR Build/Tools/*"
+        record: "Exit code and output"
+        
+      2_classify_failure_type:
+        soft_failure:
+          exit_code: "1-127"
+          signals: "UB warning, no signal"
+          conclusion: "Graceful error handling (GOOD)"
+          document: "NO"
+          
+        hard_crash:
+          exit_code: "128+ (signal)"
+          signals: "SEGV (139), ABRT (134)"
+          conclusion: "Uncontrolled crash (BAD)"
+          document: "YES - if reproducible 3x"
+          
+      3_test_fuzzer:
+        action: "Run fuzzer with crash input"
+        compare: "Fuzzer behavior vs. tool behavior"
+        
+      4_determine_authority:
+        if_match: "Real bug, document"
+        if_differ: "Fuzzer fidelity issue, DO NOT document as bug"
+        authority: "TOOL behavior is reality"
+        
+      5_reproduce_3x:
+        action: "If hard crash, reproduce 3 times"
+        acceptance: "All 3 show same exit code AND same ASAN output"
+        
+      6_severity_assessment:
+        exploitable: "Requires controlled write OR controlled jump"
+        confirmed: "Requires signal + ASAN + 3x reproduction"
+        potential: "UB warning only = not a crash"
+        
+      7_document_with_evidence:
+        include:
+          - "Tool used: [exact command]"
+          - "Exit code: [number]"
+          - "ASAN output: [full report]"
+          - "Reproduction count: 3/3"
+          - "Severity: [exploitable/confirmed/potential]"
+          
+    cjf13_prevention:
+      never: "Document fuzzer DEADLYSIGNAL as real crash without tool test"
+      never: "Confuse exit 1 (graceful) with exit 139 (SEGV)"
+      never: "Assume fuzzer represents production behavior"
+      always: "Test with project tools first"
+      always: "Check exit code explicitly"
+
+
+# ============================================================================
+# AUTOMATION HOOKS
+# ============================================================================
+automation:
+  
+  llmcjf_check_claim:
+    description: "Pre-claim verification function"
+    usage: "llmcjf_check claim 'Built 12 fuzzers'"
+    
+    implementation: |
+      llmcjf_check_claim() {
+        local claim="$1"
+        
+        echo "🔍 CLAIM VERIFICATION CHECKPOINT (H018)"
+        echo ""
+        echo "Claim: $claim"
+        echo ""
+        echo "Required Actions:"
+        echo "  1. Classify claim type (numeric/security/build/cleanup/coverage)"
+        echo "  2. Look up evidence requirements in claim_verification.yaml"
+        echo "  3. Execute verification commands"
+        echo "  4. Store evidence: /tmp/llmcjf-evidence-*.txt"
+        echo "  5. Verify evidence meets acceptance criteria"
+        echo "  6. Assign confidence level (verified/high/probable/uncertain)"
+        echo "  7. Check consistency with prior claims"
+        echo ""
+        echo "Anti-Patterns (V027 Lesson):"
+        echo "  [FAIL] Claiming 'Dictionary: 295 entries' without running fuzzer"
+        echo "  [FAIL] Claiming 'Removed N files' without find verification"
+        echo "  [FAIL] Using [OK] emoji before verification complete"
+        echo ""
+        echo "MANDATORY: Do not make claim until verification complete."
+        echo ""
+      }
+      
+  llmcjf_verify_numeric:
+    description: "Numeric claim verification helper"
+    usage: "llmcjf_verify_numeric 'dictionary entries' 'grep -c ^\\\" file.dict'"
+    
+    implementation: |
+      llmcjf_verify_numeric() {
+        local claim_name="$1"
+        local verify_cmd="$2"
+        
+        echo "🔢 NUMERIC VERIFICATION: $claim_name"
+        echo "Command: $verify_cmd"
+        echo ""
+        
+        result=$(eval "$verify_cmd")
+        echo "Result: $result"
+        echo ""
+        echo "[OK] Use: 'Verified: $result $claim_name ($verify_cmd)'"
+        echo ""
+      }
+      
+  llmcjf_verify_security:
+    description: "Security claim verification helper"
+    usage: "llmcjf_verify_security './tool crash.bin out.bin'"
+    
+    implementation: |
+      llmcjf_verify_security() {
+        local tool_cmd="$1"
+        
+        echo "🛡️  SECURITY VERIFICATION"
+        echo "Testing with project tool (authority source):"
+        echo "  $tool_cmd"
+        echo ""
+        
+        # Run 3 times
+        for i in 1 2 3; do
+          echo "Test $i/3:"
+          eval "$tool_cmd" 2>&1
+          exit_code=$?
+          echo "Exit code: $exit_code"
+          
+          if [ $exit_code -ge 128 ]; then
+            signal=$((exit_code - 128))
+            echo "  → Hard crash (signal $signal)"
+          elif [ $exit_code -ge 1 ]; then
+            echo "  → Soft failure (graceful exit)"
+          else
+            echo "  → Success"
+          fi
+          echo ""
+        done
+        
+        echo "Authority: TOOL behavior is reality, not fuzzer"
+        echo ""
+      }
+      
+  session_claim_tracker:
+    description: "Track all claims in session for consistency checking"
+    location: "/tmp/llmcjf-session-claims.log"
+    
+    format: |
+      TURN: ${TURN_NUMBER}
+      TIMESTAMP: ${ISO8601}
+      CLAIM_TYPE: ${TYPE}
+      CLAIM: ${TEXT}
+      EVIDENCE: ${COMMAND}
+      RESULT: ${OUTPUT}
+      CONFIDENCE: ${LEVEL}
+      ---
+
+
+# ============================================================================
+# INTEGRATION WITH EXISTING GOVERNANCE
+# ============================================================================
+governance_integration:
+  
+  extends_rules:
+    H006: "Success Declaration Checkpoint - Verify before claiming"
+    H018: "Numeric Claim Verification - Verify all numeric claims"
+    H015: "Cleanup Verification Mandatory - find + wc -l = 0"
+    
+  complements_files:
+    - "llmcjf/profiles/verification_requirements.yaml"
+    - "llmcjf/profiles/governance_rules.yaml"
+    - "llmcjf/profiles/llm_cjf_heuristics.yaml"
+    
+  enforcement_via:
+    - "llmcjf-session-init.sh (llmcjf_check claim function)"
+    - "scripts/session-start.sh (automatic display)"
+    - "Pre-response verification checkpoint"
+    
+  violation_tracking:
+    location: "llmcjf/violations/"
+    document: "Create V0XX entry if claim verification skipped"
+    update: "VIOLATION_COUNTERS.yaml, GOVERNANCE_DASHBOARD.md"
+
+
+# ============================================================================
+# METRICS AND MONITORING
+# ============================================================================
+metrics:
+  
+  false_success_prevention:
+    baseline: "62.5% false success rate (15 of 24 violations)"
+    target: "<5% false success rate"
+    measurement: "Violations with 'false success' tag / total violations"
+    
+  verification_compliance:
+    measurement: "Claims with evidence / total claims"
+    target: "100% compliance"
+    alert: "Any claim without evidence triggers governance review"
+    
+  user_correction_rate:
+    measurement: "User corrections / agent claims"
+    baseline: "V027: User corrected within 90 seconds"
+    target: "0 user corrections (agent self-verifies)"
+    
+  claim_revision_tracking:
+    measurement: "Claims changed without acknowledgment"
+    target: "0 silent revisions"
+    enforcement: "Cross-turn consistency checks"
+
+
+# ============================================================================
+# QUICK REFERENCE
+# ============================================================================
+quick_reference:
+  
+  before_any_claim:
+    1: "llmcjf_check claim '[your claim]'"
+    2: "Execute verification command"
+    3: "Store evidence"
+    4: "Verify acceptance criteria met"
+    5: "Assign confidence level"
+    6: "Check consistency with prior claims"
+    7: "Make claim with evidence"
+    
+  claim_format:
+    verified: "[OK] Verified: [claim] ([evidence command])"
+    high_confidence: "High confidence: [claim] ([evidence])"
+    uncertain: "Uncertain: [claim] - requires verification"
+    
+  never_do:
+    - "Claim numbers without running verification command"
+    - "Use [OK] emoji before verification complete"
+    - "Estimate when exact count is available"
+    - "Silently revise claims"
+    - "Double down when user challenges"
+    
+  always_do:
+    - "Verify before claiming"
+    - "Show verification command and output"
+    - "Quantify uncertainty"
+    - "Acknowledge errors explicitly"
+    - "Track claims for consistency"
+
+
+# ============================================================================
+# VERSION HISTORY
+# ============================================================================
+changelog:
+  v1.0:
+    date: "2026-02-06 21:50 UTC"
+    changes:
+      - "Initial release"
+      - "5 claim types with verification requirements"
+      - "Evidence matrix for common claims"
+      - "Uncertainty quantification levels"
+      - "Cross-turn consistency validation"
+      - "Automated verification workflows"
+      - "Integration with H006, H018, H015"
+      - "Security research focus (CJF-13 prevention)"
+      - "Session claim tracking"
+    lessons_incorporated:
+      - "V027: False numeric claim (90% error)"
+      - "V024: Cleanup unverified"
+      - "V012: Build untested"
+      - "CJF-13: Fuzzer vs tool confusion"
+      - "62.5% false success pattern"

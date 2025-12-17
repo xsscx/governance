@@ -1,0 +1,20 @@
+# Purpose of examples/ Directory
+
+This directory contains reference examples for LLMCJF governance:
+
+**Contents:**
+- `example-session-good.md` - Compliant interaction demonstrating proper governance
+- `example-session-bad.md` - Violation patterns to avoid
+- `example-violation-report.json` - Structured violation reporting format
+
+**Usage:**
+- Training material for understanding governance requirements
+- Reference patterns for compliant vs non-compliant interactions
+- Template for violation reporting
+
+**Maintenance:**
+- Update examples when new violation patterns emerge
+- Keep good examples aligned with current governance rules
+- Ensure examples reflect actual session patterns
+
+This .gitkeep file ensures the directory structure is preserved in version control.

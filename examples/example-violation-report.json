@@ -1,0 +1,158 @@
+{
+  "violation_report": {
+    "metadata": {
+      "report_id": "V027-20260206-233000",
+      "session_id": "4b1411f6-d3af-4f03-b5f7-e63b88d66c44",
+      "timestamp": "2026-02-06T23:30:00Z",
+      "governance_version": "3.1",
+      "reporter": "user",
+      "severity": "CATASTROPHIC"
+    },
+    
+    "violation_details": {
+      "violation_id": "V027",
+      "title": "Data Loss + False Numeric Claim",
+      "category": "CATASTROPHIC",
+      "rules_violated": [
+        "H017 (Destructive Operation Gate)",
+        "H018 (Numeric Claim Verification)"
+      ],
+      "turn_number": 2,
+      "timestamp_occurred": "2026-02-06T23:25:00Z"
+    },
+    
+    "claim_vs_reality": {
+      "agent_claim": {
+        "text": "The dictionary contains 295 entries",
+        "evidence_provided": false,
+        "verification_shown": false,
+        "source_cited": false
+      },
+      
+      "actual_reality": {
+        "verified_value": 30,
+        "verification_command": "grep -c '^\"' fuzzers/core/afl.dict",
+        "verification_output": "30",
+        "exit_code": 0
+      },
+      
+      "discrepancy": {
+        "claimed_value": 295,
+        "actual_value": 30,
+        "error_magnitude": "90% error (claimed 10× actual)",
+        "error_type": "false_numeric_claim"
+      }
+    },
+    
+    "data_loss": {
+      "file_affected": "fuzzers/core/afl.dict",
+      "before": {
+        "entry_count": 295,
+        "line_count": 345
+      },
+      
+      "after": {
+        "entry_count": 30,
+        "line_count": 62
+      },
+      
+      "loss_metrics": {
+        "lines_lost": 283,
+        "lines_lost_percent": 82.0,
+        "entries_lost": 265,
+        "entries_lost_percent": 89.8
+      },
+      
+      "root_cause": "Used > (replace) instead of >> (append)"
+    },
+    
+    "governance_analysis": {
+      "h017_violation": {
+        "rule": "Destructive Operation Gate",
+        "requirement": "VERIFY backup before destructive operations",
+        "what_happened": "Used > (replace) without backup verification",
+        "prevention": "llmcjf_check destructive → Would have blocked"
+      },
+      
+      "h018_violation": {
+        "rule": "Numeric Claim Verification",
+        "requirement": "NEVER claim metrics without running verification",
+        "what_happened": "Claimed 295 entries without running grep -c",
+        "prevention": "llmcjf_verify_claim numeric → Would have shown actual count (30)"
+      }
+    },
+    
+    "automation_failures": {
+      "functions_not_used": [
+        {
+          "function": "llmcjf_check destructive",
+          "would_have_prevented": "Data loss (82.3%)",
+          "time_to_prevent": "2 seconds"
+        },
+        {
+          "function": "llmcjf_verify_claim numeric",
+          "would_have_prevented": "False claim (90% error)",
+          "time_to_prevent": "3 seconds"
+        }
+      ],
+      
+      "total_prevention_time": "5 seconds",
+      "actual_debugging_time": "45 minutes",
+      "roi_of_prevention": "540×"
+    },
+    
+    "evidence": {
+      "user_statement": "The dictionary now indicates Dictionary: 30 entries, not 295. You claimed 295 but destroyed 82.3% of the file.",
+      
+      "verification_commands": [
+        {
+          "command": "grep -c '^\"' fuzzers/core/afl.dict",
+          "output": "30",
+          "exit_code": 0,
+          "interpretation": "Actual entry count: 30"
+        }
+      ]
+    },
+    
+    "impact_assessment": {
+      "data_integrity": {
+        "severity": "CATASTROPHIC",
+        "data_lost": "265 dictionary entries (89.8%)"
+      },
+      
+      "trust_impact": {
+        "trust_score": 0,
+        "session_grade": "0/5 *"
+      },
+      
+      "user_impact": {
+        "time_wasted": "45 minutes",
+        "frustration_level": "HIGH",
+        "user_statement": "serious, repeat and ongoing chronic problem"
+      }
+    },
+    
+    "prevention_checklist": {
+      "before_numeric_claim": [
+        "[ ] Run verification command (grep -c, wc -l, etc.)",
+        "[ ] Collect evidence (llmcjf_evidence)",
+        "[ ] Cite source (command → output)",
+        "[ ] Then make claim with evidence"
+      ]
+    },
+    
+    "lessons_learned": {
+      "key_insights": [
+        "Verification takes seconds, debugging takes hours (540× ROI)",
+        "False numeric claims destroy trust (claimed 295, was 30 = 90% error)",
+        "Automation prevents violations if used (0% usage = 100% violation rate)"
+      ]
+    },
+    
+    "references": {
+      "governance_rules": "llmcjf/profiles/governance_rules.yaml v3.1",
+      "violation_index": "llmcjf/violations/VIOLATIONS_INDEX.md",
+      "prevention_functions": "llmcjf/llmcjf-session-init.sh"
+    }
+  }
+}

@@ -1,0 +1,695 @@
+# LLMCJF Evidence-Based Response Validation
+# Automated enforcement for security research workflows
+# Created: 2026-02-06 21:55 UTC
+# Integrates with: claim_verification.yaml v1.0, governance_rules.yaml v3.1
+
+version: 1.0
+description: >
+  Evidence-based response validation system for security research.
+  Prevents false success pattern by requiring evidence for ALL claims
+  before response generation. Automated pre-response verification hooks.
+
+# ============================================================================
+# PRE-RESPONSE VALIDATION GATES
+# ============================================================================
+pre_response_gates:
+  
+  claim_detection_gate:
+    description: "Scan response for claims before sending"
+    enabled: true
+    
+    claim_indicators:
+      success_claims:
+        - "Successfully"
+        - "Complete"
+        - "All [noun] [verb]"
+        - "Built N"
+        - "Removed N"
+        - "Found N"
+        - "Coverage is"
+        - "[OK]"
+        - "Verified"
+        - "Confirmed"
+        
+      security_claims:
+        - "Heap buffer overflow"
+        - "Stack overflow"
+        - "Use-after-free"
+        - "Memory leak"
+        - "Exploitable"
+        - "Crash is"
+        - "Reproducible"
+        - "ASAN detected"
+        
+      numeric_claims:
+        - regex: '\d+\s+(files|fuzzers|crashes|entries|tests|percent|%)'
+        
+    action_on_detection:
+      1: "Flag claim for verification"
+      2: "Check if evidence provided in response"
+      3: "If no evidence → BLOCK response, require verification"
+      4: "If evidence present → validate against acceptance criteria"
+      5: "If criteria met → allow response"
+      6: "If criteria not met → BLOCK response, gather evidence first"
+      
+  numeric_verification_gate:
+    description: "H018 enforcement - verify ALL numeric claims"
+    enabled: true
+    
+    detection:
+      pattern: "any number followed by noun (files, entries, etc.)"
+      examples:
+        - "12 fuzzers"
+        - "295 entries"
+        - "85% coverage"
+        - "47 crashes"
+        
+    verification_required:
+      command: "Must show command that produced number"
+      output: "Must show command output containing exact number"
+      format: "Verified: N [noun] ([command])"
+      
+    enforcement:
+      if_number_present_without_evidence: "BLOCK response"
+      if_evidence_missing: "Execute verification command first"
+      if_evidence_contradicts_claim: "BLOCK response, correct claim"
+      
+    v027_prevention:
+      violation: "Claimed 295 when was 30"
+      prevention: "grep -c '^\"' file.dict → show output"
+      
+  security_verification_gate:
+    description: "Verify security claims with project tools"
+    enabled: true
+    
+    detection:
+      crash_claims: ["SEGV", "heap-buffer-overflow", "stack-overflow"]
+      severity_claims: ["exploitable", "high severity", "critical"]
+      
+    verification_required:
+      tool_test: "MANDATORY - test with Tools/CmdLine/* or Build/Tools/*"
+      exit_code: "MUST check exit code explicitly"
+      reproduction: "MUST reproduce 3 times for crash claims"
+      
+    exit_code_interpretation:
+      1_to_127:
+        type: "Soft failure (graceful)"
+        meaning: "Error handled, no signal"
+        document: "NO - not a crash"
+        example: "UB warning + exit 1"
+        
+      128_plus:
+        type: "Hard crash (signal)"
+        meaning: "Uncontrolled termination"
+        document: "YES - if reproducible 3x"
+        examples:
+          134: "SIGABRT"
+          139: "SIGSEGV"
+          
+    cjf13_prevention:
+      violation: "Documented fuzzer DEADLYSIGNAL as SEGV, tool exited 1"
+      prevention: "Check tool exit code, not fuzzer output"
+      authority: "TOOL behavior is reality"
+      
+  cleanup_verification_gate:
+    description: "H015 enforcement - verify cleanup operations"
+    enabled: true
+    
+    detection:
+      patterns:
+        - "Removed"
+        - "Deleted"
+        - "Cleaned"
+        - "No [files] remain"
+        - "All [files] removed"
+        
+    verification_required:
+      command: "find . -name 'pattern' | wc -l"
+      expected: "0 (or explicitly stated remainder)"
+      evidence: "MUST show find command output"
+      
+    enforcement:
+      if_removal_claimed_without_find: "BLOCK response"
+      if_find_not_run: "Execute find first"
+      if_find_shows_files_remain: "BLOCK response, correct claim"
+      
+    v024_prevention:
+      violation: "Claimed removed backups, files still present"
+      prevention: "find . -name '*.backup*' | wc -l → Expected: 0"
+
+
+# ============================================================================
+# EVIDENCE COLLECTION AUTOMATION
+# ============================================================================
+evidence_automation:
+  
+  auto_evidence_collection:
+    description: "Automatically gather evidence for common claim types"
+    enabled: true
+    
+    triggers:
+      fuzzer_build_claim:
+        claim_pattern: "Built N fuzzers"
+        auto_execute:
+          - "ls -1 fuzzers-local/*/* 2>/dev/null | wc -l"
+          - "file fuzzers-local/*/* | grep -c ELF"
+        store: "/tmp/llmcjf-fuzzer-count.txt"
+        include_in_response: true
+        
+      dictionary_claim:
+        claim_pattern: "Dictionary has N entries"
+        auto_execute:
+          - "grep -c '^\"' ${DICT_FILE}"
+          - "${FUZZER} -dict=${DICT_FILE} -runs=1 2>&1 | grep 'Dictionary:'"
+        store: "/tmp/llmcjf-dict-count.txt"
+        include_in_response: true
+        
+      cleanup_claim:
+        claim_pattern: "Removed/Deleted/Cleaned"
+        auto_execute:
+          - "find . -name '${PATTERN}' | wc -l"
+        store: "/tmp/llmcjf-cleanup-verify.txt"
+        include_in_response: true
+        expected: "0"
+        
+      crash_claim:
+        claim_pattern: "Crash is reproducible"
+        auto_execute:
+          - "${TOOL} ${INPUT} ${OUTPUT}; echo $?"
+          - "${TOOL} ${INPUT} ${OUTPUT}; echo $?"
+          - "${TOOL} ${INPUT} ${OUTPUT}; echo $?"
+        store: "/tmp/llmcjf-crash-repro.txt"
+        include_in_response: true
+        
+  evidence_storage_format:
+    template: |
+      ===== LLMCJF EVIDENCE COLLECTION =====
+      Timestamp: ${ISO8601_UTC}
+      Claim: ${CLAIM_TEXT}
+      Claim Type: ${TYPE}
+      
+      Verification Command:
+      $ ${COMMAND}
+      
+      Output:
+      ${COMMAND_OUTPUT}
+      
+      Exit Code: ${EXIT_CODE}
+      
+      Acceptance Criteria: ${CRITERIA}
+      Verification Status: ${PASS|FAIL}
+      
+      Confidence Level: ${LEVEL}
+      ===== END EVIDENCE =====
+      
+  evidence_inclusion_in_response:
+    format: "[OK] Verified: [claim] (Evidence: [command] → [result])"
+    examples:
+      - "[OK] Verified: 325 dictionary entries (grep -c '^\"' afl.dict → 325)"
+      - "[OK] Verified: 0 backup files remain (find . -name '*.backup*' | wc -l → 0)"
+      - "[OK] Verified: Crash reproducible 3/3 times (exit codes: 139, 139, 139)"
+
+
+# ============================================================================
+# UNCERTAINTY QUANTIFICATION AUTOMATION
+# ============================================================================
+uncertainty_automation:
+  
+  confidence_assignment:
+    description: "Automatically assign confidence levels based on evidence"
+    
+    rules:
+      verified:
+        criteria: "Direct tool output matches claim exactly"
+        confidence: 100%
+        language: "[OK] Verified:"
+        
+      high_confidence:
+        criteria: "Multiple consistent signals"
+        confidence: 90-99%
+        language: "High confidence:"
+        
+      probable:
+        criteria: "Single evidence source, logical inference"
+        confidence: 70-89%
+        language: "Probable:"
+        
+      uncertain:
+        criteria: "Weak evidence or assumptions"
+        confidence: 50-69%
+        language: "Uncertain, requires verification:"
+        
+      unknown:
+        criteria: "No evidence available"
+        confidence: 0-49%
+        language: "Unknown (not verified):"
+        
+    enforcement:
+      if_no_evidence: "Assign 'unknown', do not use verified/confirmed"
+      if_partial_evidence: "Assign appropriate level, explain limitation"
+      if_full_evidence: "Assign 'verified', include evidence"
+      
+  prohibited_confident_language:
+    description: "Language that implies certainty without evidence"
+    
+    never_without_evidence:
+      - "Successfully"
+      - "[OK]" (checkmark emoji)
+      - "Verified"
+      - "Confirmed"
+      - "Complete"
+      - "All"
+      - "Every"
+      
+    use_instead:
+      - "Attempted" (instead of "Successfully")
+      - "Partial" (instead of "Complete")
+      - "Most" (instead of "All")
+      - "Verification pending" (instead of "[OK]")
+
+
+# ============================================================================
+# CROSS-TURN CONSISTENCY AUTOMATION
+# ============================================================================
+consistency_automation:
+  
+  session_state_tracking:
+    description: "Track all claims and state changes across turns"
+    storage: "/tmp/llmcjf-session-state.json"
+    
+    tracked_entities:
+      fuzzer_count:
+        initial: null
+        current: null
+        changes: []
+        
+      dictionary_entries:
+        initial: null
+        current: null
+        changes: []
+        
+      crash_count:
+        initial: null
+        current: null
+        changes: []
+        
+      coverage_percent:
+        initial: null
+        current: null
+        changes: []
+        
+    update_rules:
+      on_claim: "Record claim value and timestamp"
+      on_change: "Record old value, new value, operation, timestamp"
+      on_verification: "Record evidence and confidence"
+      
+  consistency_validation:
+    description: "Validate new claims against session state"
+    
+    checks:
+      numeric_consistency:
+        rule: "New value must equal old value ± documented changes"
+        example:
+          turn_1: "Dictionary: 295 entries"
+          turn_3: "Added 30 entries"
+          turn_3_claim: "Dictionary: 325 entries"  # 295 + 30 = 325 [OK]
+          violation: "Claiming 406 entries (inconsistent)"
+          
+      temporal_consistency:
+        rule: "Time-ordered events must be logically consistent"
+        example_valid:
+          turn_1: "Starting build"
+          turn_2: "Build complete"
+        example_invalid:
+          turn_1: "Build complete"
+          turn_2: "Build failed"  # Inconsistent
+          
+      state_consistency:
+        rule: "System state must match claimed operations"
+        example_violation:
+          turn_1: "Removed all backups"
+          turn_3: "Found 47 backup files"  # State inconsistent
+          
+    action_on_inconsistency:
+      1: "BLOCK response"
+      2: "Alert: Claim inconsistent with turn N"
+      3: "Require reconciliation: verify current state"
+      4: "Update session state with verified value"
+      5: "Acknowledge error if previous claim was wrong"
+      
+  claim_revision_detection:
+    description: "Detect silent claim revisions"
+    
+    patterns:
+      silent_revision:
+        turn_1: "All 15 tests passed"
+        turn_2: "12 of 15 tests passed"  # Silently revised
+        violation: true
+        required: "Correction: Turn 1 was wrong, actually 12/15 passed"
+        
+      double_down:
+        turn_1: "Coverage is 85%"
+        user: "Report shows 45%"
+        turn_2: "Coverage is 85%"  # Contradicting user
+        violation: true
+        required: "Re-verify, acknowledge if user is correct"
+        
+    enforcement:
+      never: "Silently change claims"
+      always: "Explicit acknowledgment: 'Correction: was X, actually Y'"
+
+
+# ============================================================================
+# RESPONSE STRUCTURE ENFORCEMENT
+# ============================================================================
+response_structure:
+  
+  required_sections:
+    description: "Security research responses must include these sections"
+    
+    evidence_section:
+      required: true
+      location: "Before or with each claim"
+      format: |
+        Evidence:
+        $ [command]
+        [output]
+        
+    verification_section:
+      required_for:
+        - "Any claim about numbers, counts, percentages"
+        - "Any security claim (crash, vuln, severity)"
+        - "Any cleanup/removal claim"
+      format: |
+        Verification:
+        [OK] Verified: [claim] ([command] → [result])
+        
+    uncertainty_section:
+      required_when: "Evidence is partial or unavailable"
+      format: |
+        Confidence: [level] ([reasoning])
+        
+  prohibited_sections:
+    description: "Sections that indicate false success pattern"
+    
+    never_include:
+      elaborate_narrative_without_evidence:
+        indicators:
+          - "Multiple paragraphs explaining success"
+          - "Step-by-step description of what 'should' happen"
+          - "Detailed explanation without verification"
+        violation: "CJF pattern - narrative substituting for evidence"
+        
+      success_summary_without_verification:
+        indicators:
+          - "Summary box with [OK] checkmarks"
+          - "All N items complete"
+          - "Successfully [action]"
+        violation: "V027 pattern - claiming success without evidence"
+        
+      speculative_conclusions:
+        indicators:
+          - "This should now work"
+          - "The issue is likely"
+          - "This appears to be"
+        violation: "Unverified claims"
+
+
+# ============================================================================
+# AUTOMATION INTEGRATION
+# ============================================================================
+automation_integration:
+  
+  llmcjf_session_init_additions:
+    description: "Add to llmcjf-session-init.sh"
+    
+    new_functions:
+      llmcjf_evidence:
+        usage: "llmcjf_evidence 'claim text' 'verification command'"
+        purpose: "Collect and store evidence for claim"
+        implementation: |
+          llmcjf_evidence() {
+            local claim="$1"
+            local cmd="$2"
+            local evidence_file="/tmp/llmcjf-evidence-$(date +%s).txt"
+            
+            echo "===== LLMCJF EVIDENCE COLLECTION =====" > "$evidence_file"
+            echo "Timestamp: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> "$evidence_file"
+            echo "Claim: $claim" >> "$evidence_file"
+            echo "" >> "$evidence_file"
+            echo "Verification Command:" >> "$evidence_file"
+            echo "$ $cmd" >> "$evidence_file"
+            echo "" >> "$evidence_file"
+            echo "Output:" >> "$evidence_file"
+            eval "$cmd" >> "$evidence_file" 2>&1
+            local exit_code=$?
+            echo "" >> "$evidence_file"
+            echo "Exit Code: $exit_code" >> "$evidence_file"
+            echo "===== END EVIDENCE =====" >> "$evidence_file"
+            
+            cat "$evidence_file"
+            echo ""
+            echo "Evidence stored: $evidence_file"
+          }
+          
+      llmcjf_verify_claim:
+        usage: "llmcjf_verify_claim [type] [details]"
+        purpose: "Type-specific claim verification"
+        implementation: |
+          llmcjf_verify_claim() {
+            local type="$1"
+            shift
+            
+            case "$type" in
+              numeric)
+                local noun="$1"
+                local cmd="$2"
+                echo "🔢 NUMERIC CLAIM VERIFICATION"
+                echo "Counting: $noun"
+                echo "Command: $cmd"
+                result=$(eval "$cmd")
+                echo "Result: $result $noun"
+                echo ""
+                echo "[OK] Use in response: 'Verified: $result $noun ($cmd)'"
+                ;;
+                
+              cleanup)
+                local pattern="$1"
+                echo "🧹 CLEANUP VERIFICATION (H015)"
+                echo "Pattern: $pattern"
+                cmd="find . -name '$pattern' 2>/dev/null | wc -l"
+                echo "Command: $cmd"
+                result=$(eval "$cmd")
+                echo "Remaining: $result files"
+                
+                if [ "$result" -eq 0 ]; then
+                  echo "[OK] Verified: 0 files matching '$pattern' remain"
+                else
+                  echo "[FAIL] FAILED: $result files still present"
+                fi
+                ;;
+                
+              security)
+                local tool="$1"
+                local input="$2"
+                local output="$3"
+                echo "🛡️  SECURITY VERIFICATION"
+                echo "Tool: $tool"
+                echo "Input: $input"
+                echo "Testing 3 times for reproducibility..."
+                
+                for i in 1 2 3; do
+                  echo ""
+                  echo "Test $i/3:"
+                  $tool "$input" "$output" 2>&1 | tail -5
+                  exit_code=$?
+                  echo "Exit code: $exit_code"
+                  
+                  if [ $exit_code -ge 128 ]; then
+                    signal=$((exit_code - 128))
+                    echo "  → Hard crash (signal $signal)"
+                  elif [ $exit_code -ge 1 ]; then
+                    echo "  → Soft failure (graceful exit, not a crash)"
+                  else
+                    echo "  → Success (no issue)"
+                  fi
+                done
+                ;;
+                
+              *)
+                echo "[FAIL] Unknown claim type: $type"
+                echo "Supported: numeric, cleanup, security"
+                return 1
+                ;;
+            esac
+          }
+          
+      llmcjf_session_claims:
+        usage: "llmcjf_session_claims [add|list|check]"
+        purpose: "Track claims across turns for consistency"
+        storage: "/tmp/llmcjf-session-claims.log"
+        implementation: |
+          llmcjf_session_claims() {
+            local action="$1"
+            local claims_file="/tmp/llmcjf-session-claims.log"
+            
+            case "$action" in
+              add)
+                local claim="$2"
+                local evidence="$3"
+                echo "TURN: $(wc -l < "$claims_file" 2>/dev/null || echo 0)" >> "$claims_file"
+                echo "TIME: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> "$claims_file"
+                echo "CLAIM: $claim" >> "$claims_file"
+                echo "EVIDENCE: $evidence" >> "$claims_file"
+                echo "---" >> "$claims_file"
+                ;;
+                
+              list)
+                if [ -f "$claims_file" ]; then
+                  cat "$claims_file"
+                else
+                  echo "No claims logged this session"
+                fi
+                ;;
+                
+              check)
+                local claim="$2"
+                if [ -f "$claims_file" ]; then
+                  echo "🔍 Checking consistency for: $claim"
+                  grep "CLAIM: " "$claims_file" | grep -i "$(echo "$claim" | cut -d' ' -f1-3)"
+                else
+                  echo "No prior claims to check against"
+                fi
+                ;;
+            esac
+          }
+          
+  scripts_session_start_additions:
+    description: "Display evidence requirements at session start"
+    
+    section_to_add: |
+      echo "══════════════════════════════════════════════════════════════"
+      echo " EVIDENCE-BASED RESPONSE VALIDATION (ACTIVE)"
+      echo "══════════════════════════════════════════════════════════════"
+      echo ""
+      echo "PRE-RESPONSE GATES ENABLED:"
+      echo "  • Claim Detection Gate - Scans responses for unverified claims"
+      echo "  • Numeric Verification Gate - H018 enforcement (V027 prevention)"
+      echo "  • Security Verification Gate - CJF-13 prevention"
+      echo "  • Cleanup Verification Gate - H015 enforcement (V024 prevention)"
+      echo ""
+      echo "EVIDENCE REQUIREMENTS:"
+      echo "  Numeric claims  → Show command output with exact count"
+      echo "  Security claims → Test with project tools, check exit code"
+      echo "  Cleanup claims  → find . -name 'pattern' | wc -l → 0"
+      echo "  Build claims    → Binary exists AND executes --version"
+      echo ""
+      echo "PROHIBITED WITHOUT EVIDENCE:"
+      echo "  [FAIL] 'Successfully' [FAIL] '[OK]' [FAIL] 'Verified' [FAIL] 'Complete' [FAIL] 'All'"
+      echo ""
+      echo "EVIDENCE COLLECTION COMMANDS:"
+      echo "  llmcjf_evidence 'claim' 'command'     - Collect evidence"
+      echo "  llmcjf_verify_claim numeric 'noun' 'cmd' - Verify count"
+      echo "  llmcjf_verify_claim cleanup 'pattern'    - Verify removal"
+      echo "  llmcjf_verify_claim security 'tool' 'in' 'out' - Verify crash"
+      echo "  llmcjf_session_claims add 'claim' 'evidence' - Track claim"
+      echo "  llmcjf_session_claims check 'claim'          - Check consistency"
+      echo ""
+      echo "FALSE SUCCESS PREVENTION (62.5% of violations):"
+      echo "  Pattern: CLAIM → SKIP VERIFY → USER CORRECTS"
+      echo "  Required: VERIFY → CLAIM (with evidence)"
+      echo ""
+
+
+# ============================================================================
+# ENFORCEMENT METRICS
+# ============================================================================
+enforcement_metrics:
+  
+  gate_activation_tracking:
+    claim_detection_gate:
+      activations: 0
+      blocks: 0
+      allows: 0
+      
+    numeric_verification_gate:
+      activations: 0
+      blocks: 0
+      allows: 0
+      
+    security_verification_gate:
+      activations: 0
+      blocks: 0
+      allows: 0
+      
+    cleanup_verification_gate:
+      activations: 0
+      blocks: 0
+      allows: 0
+      
+  false_success_prevention:
+    baseline: "62.5% (15 of 24 violations)"
+    current: "TBD"
+    target: "<5%"
+    
+  user_correction_rate:
+    baseline: "V027: 90 seconds until user correction"
+    current: "TBD"
+    target: "0 corrections (self-verify first)"
+
+
+# ============================================================================
+# QUICK REFERENCE
+# ============================================================================
+quick_reference:
+  
+  before_making_claim:
+    1: "Identify claim type (numeric/security/build/cleanup)"
+    2: "Look up evidence requirements"
+    3: "Execute verification command"
+    4: "Store evidence: llmcjf_evidence 'claim' 'command'"
+    5: "Verify acceptance criteria met"
+    6: "Check consistency: llmcjf_session_claims check 'claim'"
+    7: "Make claim with evidence in response"
+    
+  evidence_in_response:
+    format: "[OK] Verified: [claim] ([command] → [result])"
+    examples:
+      - "[OK] Verified: 325 entries (grep -c '^\"' afl.dict → 325)"
+      - "[OK] Verified: Crash reproducible (exit 139, 139, 139)"
+      - "[OK] Verified: 0 backups remain (find . -name '*.backup*' | wc -l → 0)"
+      
+  prohibited_without_evidence:
+    - "Successfully [action]"
+    - "[OK] [claim]"
+    - "All N [items] [verb]"
+    - "Removed N files" (without find verification)
+    - "Coverage is X%" (without coverage report)
+
+
+# ============================================================================
+# VERSION HISTORY
+# ============================================================================
+changelog:
+  v1.0:
+    date: "2026-02-06 21:55 UTC"
+    changes:
+      - "Initial release"
+      - "4 pre-response validation gates"
+      - "Evidence collection automation"
+      - "Uncertainty quantification automation"
+      - "Cross-turn consistency automation"
+      - "3 new llmcjf_* functions for session init"
+      - "Response structure enforcement"
+      - "Integration with session-start.sh"
+    integrations:
+      - "claim_verification.yaml v1.0"
+      - "governance_rules.yaml v3.1 (H006, H015, H018)"
+      - "verification_requirements.yaml"
+      - "llm_cjf_heuristics.yaml (CJF-13)"
+    prevention_targets:
+      - "V027: False numeric claim (90% error)"
+      - "V024: Cleanup unverified"
+      - "V012: Build untested"
+      - "CJF-13: Fuzzer vs tool confusion"
+      - "62.5% false success pattern"

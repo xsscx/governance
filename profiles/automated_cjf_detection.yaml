@@ -1,0 +1,945 @@
+# LLMCJF Automated CJF Detection System
+# Real-time pattern recognition and prevention
+# Created: 2026-02-06 22:10 UTC
+# Integrates with: llm_cjf_heuristics.yaml, evidence_based_validation.yaml v1.0
+
+version: 1.0
+description: >
+  Automated Content Jockey Failure (CJF) detection system. Scans for CJF
+  patterns in real-time before response generation. Prevents documented
+  failure modes through pre-response gates and automated pattern matching.
+  Currently relies on manual pattern recognition - this provides automation.
+
+# ============================================================================
+# CJF PATTERN DATABASE
+# ============================================================================
+cjf_patterns:
+  
+  CJF_07_NO_OP_ECHO:
+    id: "CJF-07"
+    name: "No-op Echo Response"
+    severity: "MEDIUM"
+    
+    description: >
+      LLM re-emits user input verbatim with no transformation, despite being
+      prompted for review or conditional modification.
+    
+    detection:
+      pattern_type: "output_matching"
+      
+      triggers:
+        - "Response contains >90% of user input verbatim"
+        - "User requested review/modification"
+        - "No changes detected in output vs input"
+        
+      scan_method: |
+        # Compare user input to agent response
+        similarity=$(diff -u <(echo "$USER_INPUT") <(echo "$AGENT_RESPONSE") | wc -l)
+        if [ $similarity -lt 10 ]; then
+          echo "CJF-07 DETECTED: No-op echo"
+        fi
+        
+    prevention:
+      gate: "pre_response_similarity_check"
+      action: "If similarity >90%, require explicit changes or explanation"
+      
+    false_positives:
+      - "User requested literal copy"
+      - "Confirming exact content before action"
+      
+  CJF_08_STRUCTURE_REGRESSION:
+    id: "CJF-08"
+    name: "Known-Good Structure Regression"
+    severity: "HIGH"
+    
+    description: >
+      LLM breaks validated YAML, Makefile, or shell syntax while attempting
+      modifications (indentation, heredoc boundaries, reserved syntax).
+    
+    detection:
+      pattern_type: "syntax_validation"
+      
+      triggers:
+        - "Modifying YAML/Makefile/shell script"
+        - "Syntax validation fails post-modification"
+        - "Original file had valid syntax"
+        
+      scan_method: |
+        # Before modification
+        validate_syntax_before "$FILE"
+        
+        # After modification
+        validate_syntax_after "$FILE"
+        
+        if syntax_broken; then
+          echo "CJF-08 DETECTED: Structure regression"
+        fi
+        
+    prevention:
+      gate: "pre_modification_syntax_validation"
+      action: "Validate syntax before/after, rollback if broken"
+      
+    file_types:
+      yaml: "yamllint"
+      makefile: "make -n"
+      shell: "bash -n"
+      json: "jq ."
+      
+  CJF_09_FORMAT_IGNORANCE:
+    id: "CJF-09"
+    name: "Format Specification Ignorance"
+    severity: "HIGH"
+    
+    description: >
+      LLM generates data files using wrong syntax (e.g., AFL-style inline
+      comments in libFuzzer dictionaries).
+    
+    detection:
+      pattern_type: "format_validation"
+      
+      triggers:
+        - "Modifying .dict, .cfg, or structured data files"
+        - "Format-specific rules violated"
+        - "Parser rejection detected"
+        
+      scan_method: |
+        # LibFuzzer dictionary check
+        if [[ "$FILE" == *.dict ]]; then
+          # Check for inline comments (AFL format, wrong for libFuzzer)
+          if grep -E '^"[^"]*"[[:space:]]+#' "$FILE"; then
+            echo "CJF-09 DETECTED: Inline comments in libFuzzer dict"
+          fi
+        fi
+        
+    prevention:
+      gate: "file_type_format_gate"
+      action: "Check format rules from FILE_TYPE_GATES.md before modification"
+      
+    format_rules:
+      libfuzzer_dict:
+        comments: "Separate line only"
+        format: 'Hex (\xNN) not octal (\NNN)'
+        test: "./fuzzer -dict=file.dict -runs=1"
+        
+    violations:
+      - "V009: Dictionary format (inline comments) - 3rd repeat"
+      - "V027: Dictionary data loss (related)"
+      
+  CJF_10_UNSOLICITED_DOCS:
+    id: "CJF-10"
+    name: "Unsolicited Documentation Generation"
+    severity: "MEDIUM"
+    
+    description: >
+      LLM creates extensive documentation when user requested testing only.
+      Creates summary loops, multiple formats for same information.
+    
+    detection:
+      pattern_type: "file_creation_intent"
+      
+      triggers:
+        - "User requested: test/verify/run"
+        - "Agent creating: .md files, guides, summaries"
+        - "Multiple output files for single task"
+        
+      scan_method: |
+        # Check user intent
+        if echo "$USER_REQUEST" | grep -qi '\(test\|verify\|run\|check\)'; then
+          # Check agent actions
+          if echo "$AGENT_ACTIONS" | grep -qi 'create.*\.md'; then
+            echo "CJF-10 DETECTED: Unsolicited documentation"
+          fi
+        fi
+        
+    prevention:
+      gate: "documentation_intent_gate"
+      action: "If user said 'test', only test. Document ONLY if requested."
+      
+    allowed_responses:
+      test_request: "Run test, report pass/fail (1-3 lines)"
+      verify_request: "Execute verification, show result"
+      
+    prohibited_responses:
+      - "Creating markdown files"
+      - "Writing comprehensive guides"
+      - "Multiple summary formats"
+      
+  CJF_11_CUSTOM_TEST_PROGRAM:
+    id: "CJF-11"
+    name: "Custom Test Program Instead of Project Tooling"
+    severity: "MEDIUM"
+    
+    description: >
+      LLM creates custom C++ test programs instead of using existing
+      project command-line tools for crash reproduction.
+    
+    detection:
+      pattern_type: "tool_selection"
+      
+      triggers:
+        - "User requested: crash reproduction"
+        - "Agent creating: /tmp/*.cpp, custom harness"
+        - "Project tools exist: Build/Tools/*, Tools/CmdLine/*"
+        
+      scan_method: |
+        # Check if creating custom test program
+        if echo "$AGENT_ACTIONS" | grep -q 'create.*\.cpp'; then
+          # Check if project tools exist
+          if [ -d "Tools/CmdLine" ] || [ -d "Build/Tools" ]; then
+            echo "CJF-11 DETECTED: Custom test instead of project tools"
+          fi
+        fi
+        
+    prevention:
+      gate: "tool_selection_gate"
+      action: "Check CRASH_REPRODUCTION_GUIDE.md, use project tools only"
+      
+    required_workflow:
+      1: "Read governance: CRASH_REPRODUCTION_GUIDE.md"
+      2: "Use project tools: Build/Tools/*, Tools/CmdLine/*"
+      3: "If fuzzer crashes but tool doesn't → fuzzer fidelity issue"
+      
+  CJF_12_FUZZER_FIDELITY_ASSUMPTION:
+    id: "CJF-12"
+    name: "Fuzzer Fidelity Assumption Failure"
+    severity: "HIGH"
+    
+    description: >
+      LLM assumes fuzzer-discovered crashes are real bugs without testing
+      with project tools. Creates documentation before verification.
+    
+    detection:
+      pattern_type: "verification_order"
+      
+      triggers:
+        - "Fuzzer crash reported"
+        - "Agent creating documentation immediately"
+        - "No project tool testing performed"
+        
+      scan_method: |
+        # Check if fuzzer crash mentioned
+        if echo "$CONTEXT" | grep -qi 'fuzzer.*crash'; then
+          # Check if tool testing happened
+          if ! echo "$AGENT_ACTIONS" | grep -q 'Tools/CmdLine\|Build/Tools'; then
+            echo "CJF-12 DETECTED: Documenting fuzzer crash without tool verification"
+          fi
+        fi
+        
+    prevention:
+      gate: "fuzzer_verification_gate"
+      action: "Test with project tools FIRST before documenting"
+      
+    required_workflow:
+      1: "Fuzzer reports crash"
+      2: "Test with project tool (Tools/CmdLine/*)"
+      3: "If tool crashes → real bug, document"
+      4: "If tool doesn't crash → fuzzer fidelity issue, fix fuzzer"
+      
+  CJF_13_EXIT_CODE_CONFUSION:
+    id: "CJF-13"
+    name: "Fuzzer Crash vs Tool Graceful Failure Confusion"
+    severity: "CRITICAL"
+    
+    description: >
+      LLM documents fuzzer DEADLYSIGNAL as SEGV when project tool only
+      shows UB warning with graceful exit (1-127). Confuses strict fuzzer
+      UBSan with permissive tool UBSan.
+    
+    detection:
+      pattern_type: "exit_code_interpretation"
+      
+      triggers:
+        - "Fuzzer shows: DEADLYSIGNAL/SEGV"
+        - "Tool shows: UB warning + exit 1"
+        - "Agent claiming: SEGV crash"
+        
+      scan_method: |
+        # Check tool exit code
+        exit_code=$(echo "$TOOL_OUTPUT" | grep -oP 'exit.*\K\d+' | tail -1)
+        
+        if [ "$exit_code" -ge 1 ] && [ "$exit_code" -lt 128 ]; then
+          # Soft failure
+          if echo "$AGENT_CLAIM" | grep -qi 'segv\|crash\|overflow'; then
+            echo "CJF-13 DETECTED: Claiming crash when tool exited $exit_code (graceful)"
+          fi
+        fi
+        
+    prevention:
+      gate: "exit_code_classification_gate"
+      action: "Check exit code: 1-127 (graceful) vs 128+ (signal)"
+      
+    exit_code_rules:
+      soft_failure:
+        range: "1-127"
+        meaning: "Graceful error handling"
+        document: "NO - not a crash"
+        
+      hard_crash:
+        range: "128+ (128 + signal number)"
+        examples: "139 (SEGV), 134 (ABRT)"
+        document: "YES - if reproducible 3x"
+        
+    authority:
+      source: "TOOL behavior is reality"
+      not_authoritative: "FUZZER is test artifact"
+
+
+# ============================================================================
+# AUTOMATED DETECTION GATES
+# ============================================================================
+detection_gates:
+  
+  pre_response_cjf_scan:
+    description: "Scan planned response for CJF patterns before sending"
+    enabled: true
+    
+    scan_sequence:
+      1_check_no_op_echo:
+        pattern: "CJF-07"
+        method: "similarity_check(user_input, agent_response)"
+        threshold: "90% similarity"
+        
+      2_check_format_violations:
+        pattern: "CJF-09"
+        method: "scan_file_modifications_for_format_errors()"
+        applicable: ".dict, .cfg, .yaml, .json files"
+        
+      3_check_unsolicited_docs:
+        pattern: "CJF-10"
+        method: "check_intent(user_request) vs check_actions(agent_plan)"
+        trigger: "User: test/verify → Agent: create .md"
+        
+      4_check_tool_selection:
+        pattern: "CJF-11"
+        method: "scan_for_custom_test_programs()"
+        trigger: "Creating .cpp when project tools exist"
+        
+      5_check_fuzzer_verification:
+        pattern: "CJF-12"
+        method: "verify_tool_testing_performed()"
+        trigger: "Fuzzer crash + no tool test"
+        
+      6_check_exit_code_interpretation:
+        pattern: "CJF-13"
+        method: "validate_exit_code_claims()"
+        trigger: "Claiming crash with exit 1-127"
+        
+    on_detection:
+      1: "HALT response generation"
+      2: "Show detected pattern: CJF-XX"
+      3: "Show prevention action"
+      4: "Require correction before proceeding"
+      
+  pre_modification_syntax_gate:
+    description: "Validate syntax before/after file modifications"
+    enabled: true
+    pattern: "CJF-08"
+    
+    workflow:
+      before_modification:
+        - "Snapshot original file"
+        - "Validate syntax: yamllint, bash -n, jq ., etc."
+        - "Record: syntax_valid_before = true/false"
+        
+      after_modification:
+        - "Validate syntax with same tool"
+        - "Record: syntax_valid_after = true/false"
+        
+      comparison:
+        - "If before=true, after=false → CJF-08 DETECTED"
+        - "Action: Rollback modification"
+        - "Require: Fix syntax before applying"
+        
+  file_type_format_gate:
+    description: "Check format rules before modifying structured files"
+    enabled: true
+    pattern: "CJF-09"
+    
+    file_type_rules:
+      "*.dict":
+        format: "libFuzzer dictionary"
+        rules:
+          - "Comments on separate lines only"
+          - "Hex format (\xNN) not octal (\NNN)"
+          - "No inline comments after entries"
+        validation: "./fuzzer -dict=file.dict -runs=1 2>&1 | grep Dictionary"
+        governance: "llmcjf/governance-updates/FUZZER_DICTIONARY_GOVERNANCE.md"
+        
+      "*.yaml":
+        format: "YAML"
+        rules:
+          - "Consistent indentation (2 or 4 spaces)"
+          - "No tabs"
+          - "Valid YAML syntax"
+        validation: "yamllint -c .yamllint file.yaml"
+        
+      "*.json":
+        format: "JSON"
+        rules:
+          - "Valid JSON syntax"
+          - "No trailing commas"
+          - "No comments"
+        validation: "jq . file.json"
+        
+      "Makefile":
+        format: "GNU Make"
+        rules:
+          - "Tabs for recipe indentation"
+          - "No spaces in recipe lines"
+          - "Valid Make syntax"
+        validation: "make -n -f Makefile"
+        
+    enforcement:
+      before_modification:
+        - "Identify file type"
+        - "Load format rules"
+        - "Check governance documentation"
+        
+      during_modification:
+        - "Apply format rules"
+        - "Validate each change"
+        
+      after_modification:
+        - "Run validation command"
+        - "If validation fails → rollback"
+        
+  documentation_intent_gate:
+    description: "Prevent unsolicited documentation generation"
+    enabled: true
+    pattern: "CJF-10"
+    
+    user_intent_classification:
+      test_verify_run:
+        keywords: ["test", "verify", "run", "check", "execute"]
+        allowed_output: "Test result only (pass/fail/error)"
+        prohibited: "Creating .md files, comprehensive guides"
+        
+      document_explain_describe:
+        keywords: ["document", "explain", "describe", "write guide"]
+        allowed_output: "Documentation files"
+        
+      investigate_debug_analyze:
+        keywords: ["investigate", "debug", "analyze", "find"]
+        allowed_output: "Findings summary (concise)"
+        prohibited: "Multiple summary formats, repeat information"
+        
+    enforcement:
+      if_user_intent_test:
+        allowed_files: 0
+        allowed_response: "1-3 lines: PASS/FAIL/ERROR + evidence"
+        
+      if_user_intent_document:
+        allowed_files: 1
+        allowed_response: "Single documentation file"
+        
+      if_creating_md_for_test:
+        action: "BLOCK - CJF-10 detected"
+        message: "User requested test, not documentation"
+        
+  tool_selection_gate:
+    description: "Require project tooling, prohibit custom test programs"
+    enabled: true
+    pattern: "CJF-11"
+    
+    project_tools_check:
+      locations:
+        - "Tools/CmdLine/*"
+        - "Build/Tools/*"
+        - "fuzzers-local/*"
+        
+      scan: "ls -R Tools/ Build/Tools/ fuzzers-local/ 2>/dev/null"
+      
+    enforcement:
+      if_crash_reproduction_requested:
+        required: "Use project tools listed above"
+        prohibited: "Creating /tmp/*.cpp, custom harnesses"
+        
+      if_project_tools_exist:
+        action: "BLOCK custom test program creation"
+        message: "Use existing project tools: [list]"
+        
+      if_creating_cpp_file:
+        check: "Is this in project source tree?"
+        if_in_tmp: "BLOCK - use project tools instead"
+        
+  fuzzer_verification_gate:
+    description: "Require tool verification before documenting fuzzer crashes"
+    enabled: true
+    pattern: "CJF-12"
+    
+    workflow:
+      on_fuzzer_crash_reported:
+        1: "HALT documentation creation"
+        2: "Require: Test with project tool first"
+        3: "Command: Tools/CmdLine/[tool] crash.bin output.bin"
+        4: "Record: Tool exit code"
+        5: "If tool crashes (128+) → proceed to document"
+        6: "If tool doesn't crash (<128) → fuzzer fidelity issue"
+        
+    enforcement:
+      if_fuzzer_crash_and_no_tool_test:
+        action: "BLOCK documentation"
+        message: "Test with project tool first (authority source)"
+        
+      if_tool_doesnt_crash:
+        action: "BLOCK crash documentation"
+        message: "Fuzzer fidelity issue, not production bug"
+        
+  exit_code_classification_gate:
+    description: "Classify failures correctly: graceful (1-127) vs crash (128+)"
+    enabled: true
+    pattern: "CJF-13"
+    
+    classification_rules:
+      graceful_failure:
+        exit_codes: "1-127"
+        indicators:
+          - "UB warning only"
+          - "Controlled exit"
+          - "No signal"
+        classification: "NOT a crash"
+        document: "NO"
+        
+      hard_crash:
+        exit_codes: "128-255 (128 + signal)"
+        indicators:
+          - "ASAN/UBSAN abort"
+          - "Signal raised (SEGV, ABRT)"
+          - "Uncontrolled termination"
+        classification: "Real crash"
+        document: "YES (if reproducible 3x)"
+        
+    enforcement:
+      before_claiming_crash:
+        1: "Extract tool exit code: echo $?"
+        2: "Classify: 1-127 vs 128+"
+        3: "If 1-127 → NOT a crash, BLOCK claim"
+        4: "If 128+ → Verify 3x, then document"
+        
+      if_exit_1_to_127:
+        action: "BLOCK crash documentation"
+        message: "Exit $CODE: Graceful failure, not crash"
+        
+      signal_mapping:
+        139: "SIGSEGV (segmentation fault)"
+        134: "SIGABRT (abort)"
+        136: "SIGFPE (floating point exception)"
+        137: "SIGKILL (killed)"
+
+
+# ============================================================================
+# AUTOMATED SCANNING FUNCTIONS
+# ============================================================================
+scanning_functions:
+  
+  llmcjf_scan_response:
+    usage: "llmcjf_scan_response 'planned response text'"
+    purpose: "Scan planned response for CJF patterns before sending"
+    
+    implementation: |
+      llmcjf_scan_response() {
+        local response="$1"
+        local detected=()
+        
+        echo "🔍 CJF PATTERN SCAN"
+        echo ""
+        
+        # CJF-09: Format violations in file modifications
+        if echo "$response" | grep -q 'modify.*\.dict'; then
+          if echo "$response" | grep -qE '"[^"]*"[[:space:]]+#'; then
+            detected+=("CJF-09: Inline comments in libFuzzer dict")
+          fi
+        fi
+        
+        # CJF-10: Unsolicited documentation
+        if echo "$USER_REQUEST" | grep -qi '\(test\|verify\|run\)'; then
+          if echo "$response" | grep -qi 'create.*\.md\|write.*guide'; then
+            detected+=("CJF-10: Creating docs when user requested test")
+          fi
+        fi
+        
+        # CJF-11: Custom test programs
+        if echo "$response" | grep -q 'create.*/tmp/.*\.cpp'; then
+          if [ -d "Tools/CmdLine" ]; then
+            detected+=("CJF-11: Custom test program instead of project tools")
+          fi
+        fi
+        
+        # CJF-13: Exit code confusion
+        if echo "$response" | grep -qi 'crash\|segv'; then
+          if echo "$response" | grep -oP 'exit.*\K[1-9]\d{0,1}(?!\d)' | grep -v '1[3-9][0-9]'; then
+            detected+=("CJF-13: Claiming crash with graceful exit code")
+          fi
+        fi
+        
+        # Report
+        if [ ${#detected[@]} -gt 0 ]; then
+          echo "[WARN]  CJF PATTERNS DETECTED:"
+          for pattern in "${detected[@]}"; do
+            echo "  • $pattern"
+          done
+          echo ""
+          echo "BLOCKING RESPONSE - Correction required"
+          return 1
+        else
+          echo "[OK] No CJF patterns detected"
+          return 0
+        fi
+      }
+      
+  llmcjf_validate_file_modification:
+    usage: "llmcjf_validate_file_modification 'file.ext' 'planned changes'"
+    purpose: "Validate file modification against format rules and syntax"
+    
+    implementation: |
+      llmcjf_validate_file_modification() {
+        local file="$1"
+        local changes="$2"
+        
+        echo "🔍 FILE MODIFICATION VALIDATION"
+        echo "File: $file"
+        echo ""
+        
+        # Detect file type
+        case "$file" in
+          *.dict)
+            echo "Type: libFuzzer dictionary"
+            echo "Rules: No inline comments, hex format only"
+            
+            # Check for inline comments
+            if echo "$changes" | grep -qE '"[^"]*"[[:space:]]+#'; then
+              echo "[FAIL] CJF-09: Inline comments detected"
+              echo "Correct: Comments on separate lines"
+              return 1
+            fi
+            ;;
+            
+          *.yaml|*.yml)
+            echo "Type: YAML"
+            echo "Validation: yamllint"
+            
+            # Syntax check (requires temp file)
+            echo "$changes" | yamllint - 2>&1
+            if [ $? -ne 0 ]; then
+              echo "[FAIL] CJF-08: YAML syntax broken"
+              return 1
+            fi
+            ;;
+            
+          *.json)
+            echo "Type: JSON"
+            echo "Validation: jq"
+            
+            echo "$changes" | jq . >/dev/null 2>&1
+            if [ $? -ne 0 ]; then
+              echo "[FAIL] CJF-08: JSON syntax broken"
+              return 1
+            fi
+            ;;
+            
+          Makefile|*.mk)
+            echo "Type: Makefile"
+            echo "Validation: make -n"
+            echo "[WARN]  Tabs required for recipes"
+            ;;
+        esac
+        
+        echo "[OK] Validation passed"
+        return 0
+      }
+      
+  llmcjf_check_intent_mismatch:
+    usage: "llmcjf_check_intent_mismatch 'user request' 'agent actions'"
+    purpose: "Detect intent mismatch (user wants test, agent creates docs)"
+    
+    implementation: |
+      llmcjf_check_intent_mismatch() {
+        local user_request="$1"
+        local agent_actions="$2"
+        
+        echo "🔍 INTENT MISMATCH CHECK"
+        echo ""
+        
+        # Classify user intent
+        if echo "$user_request" | grep -qi '\(test\|verify\|run\|check\)'; then
+          user_intent="TEST"
+          echo "User intent: TEST/VERIFY"
+        elif echo "$user_request" | grep -qi '\(document\|explain\|guide\)'; then
+          user_intent="DOCUMENT"
+          echo "User intent: DOCUMENT"
+        else
+          user_intent="UNKNOWN"
+          echo "User intent: UNKNOWN"
+        fi
+        
+        # Check agent actions
+        if echo "$agent_actions" | grep -qi 'create.*\.md\|write.*guide'; then
+          agent_intent="DOCUMENT"
+          echo "Agent action: Creating documentation"
+        else
+          agent_intent="ACTION"
+          echo "Agent action: Executing task"
+        fi
+        
+        # Detect mismatch
+        if [ "$user_intent" = "TEST" ] && [ "$agent_intent" = "DOCUMENT" ]; then
+          echo ""
+          echo "[WARN]  CJF-10 DETECTED: Intent mismatch"
+          echo "User requested: TEST"
+          echo "Agent planning: CREATE DOCUMENTATION"
+          echo ""
+          echo "BLOCKING: Test only, no documentation"
+          return 1
+        fi
+        
+        echo ""
+        echo "[OK] Intent alignment verified"
+        return 0
+      }
+      
+  llmcjf_verify_tool_usage:
+    usage: "llmcjf_verify_tool_usage 'task type' 'planned approach'"
+    purpose: "Verify using project tools, not custom programs"
+    
+    implementation: |
+      llmcjf_verify_tool_usage() {
+        local task="$1"
+        local approach="$2"
+        
+        echo "🔍 TOOL USAGE VERIFICATION"
+        echo "Task: $task"
+        echo ""
+        
+        # Check if crash reproduction
+        if echo "$task" | grep -qi 'crash\|reproduce\|test.*crash'; then
+          echo "Task type: Crash reproduction"
+          echo "Required: Use project tools"
+          echo ""
+          
+          # Check for project tools
+          if [ -d "Tools/CmdLine" ] || [ -d "Build/Tools" ]; then
+            echo "Available project tools:"
+            ls Tools/CmdLine/ Build/Tools/ 2>/dev/null | head -5
+            echo ""
+          fi
+          
+          # Check if creating custom program
+          if echo "$approach" | grep -q '/tmp/.*\.cpp\|custom.*harness'; then
+            echo "[WARN]  CJF-11 DETECTED"
+            echo "Approach: Creating custom test program"
+            echo "Required: Use existing project tools"
+            echo ""
+            echo "BLOCKING: Use Tools/CmdLine/* or Build/Tools/*"
+            return 1
+          fi
+        fi
+        
+        echo "[OK] Tool usage verified"
+        return 0
+      }
+      
+  llmcjf_check_exit_code:
+    usage: "llmcjf_check_exit_code 'exit_code' 'claimed_severity'"
+    purpose: "Validate crash claims against exit code classification"
+    
+    implementation: |
+      llmcjf_check_exit_code() {
+        local exit_code="$1"
+        local claim="$2"
+        
+        echo "🔍 EXIT CODE CLASSIFICATION"
+        echo "Exit code: $exit_code"
+        echo "Claim: $claim"
+        echo ""
+        
+        # Classify exit code
+        if [ "$exit_code" -ge 128 ]; then
+          # Hard crash
+          signal=$((exit_code - 128))
+          case $signal in
+            11) signal_name="SIGSEGV (segmentation fault)" ;;
+            6)  signal_name="SIGABRT (abort)" ;;
+            8)  signal_name="SIGFPE (floating point exception)" ;;
+            *)  signal_name="Signal $signal" ;;
+          esac
+          
+          echo "Classification: HARD CRASH"
+          echo "Signal: $signal_name"
+          echo ""
+          
+          if echo "$claim" | grep -qi 'crash\|segv\|overflow'; then
+            echo "[OK] Claim consistent with exit code $exit_code"
+            return 0
+          fi
+          
+        elif [ "$exit_code" -ge 1 ]; then
+          # Soft failure
+          echo "Classification: SOFT FAILURE (graceful exit)"
+          echo "Not a crash - controlled error handling"
+          echo ""
+          
+          if echo "$claim" | grep -qi 'crash\|segv\|overflow'; then
+            echo "[WARN]  CJF-13 DETECTED"
+            echo "Claim: Crash/SEGV"
+            echo "Reality: Exit $exit_code (graceful failure)"
+            echo ""
+            echo "BLOCKING: This is NOT a crash"
+            return 1
+          fi
+          
+        else
+          # Success
+          echo "Classification: SUCCESS"
+          echo ""
+        fi
+        
+        echo "[OK] Exit code classification verified"
+        return 0
+      }
+
+
+# ============================================================================
+# REAL-TIME MONITORING
+# ============================================================================
+real_time_monitoring:
+  
+  log_file: "/tmp/llmcjf-cjf-detection.log"
+  
+  metrics:
+    cjf_patterns_scanned: 0
+    cjf_patterns_detected: 0
+    responses_blocked: 0
+    false_positives: 0
+    
+  log_format: |
+    TIMESTAMP: ${ISO8601_UTC}
+    PATTERN: ${CJF_ID}
+    SEVERITY: ${SEVERITY}
+    DETECTED_IN: ${CONTEXT}
+    ACTION: ${BLOCKED|ALLOWED}
+    ---
+    
+  reporting:
+    on_detection:
+      - "Log to /tmp/llmcjf-cjf-detection.log"
+      - "Increment VIOLATION_COUNTERS.yaml (if not prevented)"
+      - "Display prevention message to agent"
+      - "Block response until corrected"
+      
+    daily_summary:
+      - "Total scans performed"
+      - "Patterns detected (by CJF-ID)"
+      - "Responses blocked"
+      - "Prevention success rate"
+
+
+# ============================================================================
+# INTEGRATION WITH EXISTING SYSTEMS
+# ============================================================================
+integration:
+  
+  extends:
+    - "llm_cjf_heuristics.yaml (pattern database)"
+    - "evidence_based_validation.yaml v1.0 (pre-response gates)"
+    - "governance_rules.yaml v3.1 (enforcement)"
+    
+  adds_automation_to:
+    pre_response_gates:
+      - "CJF pattern scan (all 7 patterns)"
+      - "Intent mismatch detection"
+      - "Exit code classification"
+      
+    file_modification_gates:
+      - "Syntax validation (CJF-08)"
+      - "Format rule checking (CJF-09)"
+      
+    tool_selection_gates:
+      - "Project tool requirement (CJF-11)"
+      - "Fuzzer verification order (CJF-12)"
+      
+  enforcement_points:
+    
+    before_response:
+      1: "llmcjf_scan_response 'planned response'"
+      2: "If CJF detected → HALT, show pattern, require fix"
+      3: "If clean → proceed"
+      
+    before_file_modification:
+      1: "llmcjf_validate_file_modification 'file' 'changes'"
+      2: "If format violation → BLOCK, show rules"
+      3: "If syntax broken → BLOCK, rollback"
+      
+    before_documentation:
+      1: "llmcjf_check_intent_mismatch 'user request' 'agent plan'"
+      2: "If mismatch → BLOCK, redirect to task"
+      
+    before_crash_documentation:
+      1: "llmcjf_verify_tool_usage 'crash reproduction' 'approach'"
+      2: "llmcjf_check_exit_code '$exit_code' 'claim'"
+      3: "If violations → BLOCK, require correction"
+
+
+# ============================================================================
+# PREVENTION SUCCESS METRICS
+# ============================================================================
+metrics:
+  
+  baseline:
+    manual_recognition: "100% (documented after violation)"
+    automated_prevention: "0% (no automation before this)"
+    
+  targets:
+    automated_detection_rate: ">95% before execution"
+    false_positive_rate: "<5%"
+    response_block_rate: "100% when CJF detected"
+    
+  measurement:
+    detection_rate: "CJF patterns detected / total CJF opportunities"
+    prevention_rate: "CJF patterns blocked / CJF patterns detected"
+    false_positive_rate: "False blocks / total blocks"
+
+
+# ============================================================================
+# QUICK REFERENCE
+# ============================================================================
+quick_reference:
+  
+  before_response:
+    command: "llmcjf_scan_response 'planned response'"
+    scans: "CJF-07, 09, 10, 11, 12, 13"
+    
+  before_file_mod:
+    command: "llmcjf_validate_file_modification 'file' 'changes'"
+    validates: "Syntax, format rules, CJF-08, CJF-09"
+    
+  crash_reproduction:
+    tool_check: "llmcjf_verify_tool_usage 'crash' 'approach'"
+    exit_check: "llmcjf_check_exit_code '$?' 'claim'"
+    prevents: "CJF-11, CJF-12, CJF-13"
+    
+  intent_check:
+    command: "llmcjf_check_intent_mismatch 'user' 'agent'"
+    prevents: "CJF-10 (unsolicited docs)"
+
+
+# ============================================================================
+# VERSION HISTORY
+# ============================================================================
+changelog:
+  v1.0:
+    date: "2026-02-06 22:10 UTC"
+    changes:
+      - "Initial release - AUTOMATED CJF DETECTION"
+      - "7 CJF patterns with automated detection (CJF-07 through CJF-13)"
+      - "6 detection gates (pre-response, syntax, format, intent, tool, exit code)"
+      - "5 scanning functions for real-time pattern detection"
+      - "Integration with evidence_based_validation.yaml pre-response gates"
+      - "Real-time monitoring with metrics and logging"
+    
+    automation_added:
+      before: "Manual pattern recognition post-violation (100% reactive)"
+      after: "Automated detection pre-execution (target >95% preventive)"
+      
+    addresses_user_priority:
+      priority_3: "Automated CJF detection (was manual only)"
+      status: "COMPLETE"

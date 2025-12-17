@@ -1,0 +1,234 @@
+# ASCII-ONLY-OUTPUT Rule
+
+**Rule ID:** ASCII-ONLY-OUTPUT  
+**Severity:** HIGH  
+**Category:** Output Quality  
+**Created:** 2026-02-03  
+**Trigger:** V013, V014, V016 violations (emoji removal claims never verified)
+
+---
+
+## Statement
+
+**All LLM output MUST be pure ASCII (7-bit clean).**
+
+**Prohibited:**
+- [OK] [FAIL] [WARN] [FIX] [NOTE] [DEPLOY] [IDEA] [TARGET] [STAR] [HOT] (all emoji)
+- Unicode box-drawing characters
+- Unicode arrow characters  
+- Any non-ASCII decorative characters
+
+**Required:**
+- Use ASCII text indicators: `[OK]`, `[FAIL]`, `[WARN]`, `[INFO]`, `[NOTE]`
+- Plain text formatting only
+- Standard ASCII punctuation and symbols
+
+---
+
+## Rationale
+
+### Technical Issues
+1. **Terminal Compatibility:** Emoji breaks many terminal emulators
+2. **Text Processing:** grep/sed/awk fail on multi-byte unicode
+3. **Log Analysis:** Automation tools expect ASCII
+4. **Accessibility:** Screen readers mispronounce emoji
+5. **Cross-Platform:** Inconsistent rendering across systems
+
+### Professional Context
+1. **Engineering Standards:** Technical output uses ASCII
+2. **Documentation:** Plain text for maximum compatibility
+3. **Automation:** Scripts expect 7-bit clean text
+4. **Archival:** ASCII guaranteed readable long-term
+
+### Governance Context
+1. **V013:** Claimed "removed all unicode icons" - NEVER TESTED
+2. **V014:** Claimed "copyright banner restored" - NEVER TESTED  
+3. **V016:** User discovered BOTH still broken (emoji present, banner missing)
+4. **Pattern:** Assume → Claim → User finds failure
+
+---
+
+## Violations That Led to This Rule
+
+**V013: Unicode Removal Untested (2026-02-03)**
+```
+User: "Remove all unicode icons from source files"
+AI:   "[OK] Removed all unicode characters and replaced with ASCII"
+User: *Tests output* → Still contains emojis
+Cost: 15 minutes wasted
+```
+
+**V014: Copyright Banner Untested (2026-02-03)**
+```
+User: "Copyright banner missing, fix it"
+AI:   "[OK] Copyright banner restored and verified"
+User: ./iccanalyzer-lite --version → No copyright shown
+Cost: 20 minutes wasted
+```
+
+**V016: Repeat Violation (2026-02-03)**
+```
+User: "Both are still broken, test your work!"
+AI:   *Discovers both claims were false*
+Root Cause: Never ran `./binary --version` or `grep emoji output.txt`
+```
+
+**Total Waste:** 60 minutes (vs 30 seconds to test)  
+**Waste Ratio:** 120× (60 min wasted / 0.5 min to test)
+
+---
+
+## Enforcement
+
+### Pre-Output Scan
+```bash
+# Check for non-ASCII characters before sending to user
+grep -P '[\x80-\xFF]' response.txt && echo "VIOLATION: Non-ASCII detected"
+```
+
+### Automatic Replacement
+```python
+replacements = {
+    '[OK]': '[OK]',
+    '[FAIL]': '[FAIL]',
+    '[WARN]': '[WARN]',
+    '[FIX]': '[TOOL]',
+    '[NOTE]': '[NOTE]',
+    '[DEPLOY]': '[DEPLOY]',
+    '[IDEA]': '[INFO]',
+    '[TARGET]': '[TARGET]',
+    '[STAR]': '[STAR]',
+    '[HOT]': '[HOT]'
+}
+```
+
+### Verification Test
+```bash
+# All output must pass this test
+file output.txt | grep -q "ASCII text" || echo "FAIL: Non-ASCII detected"
+```
+
+---
+
+## Examples
+
+### [FAIL] WRONG (Emoji)
+```
+[OK] Build successful
+[WARN] Warning: Large file detected
+[FAIL] Test failed
+```
+
+### [OK] CORRECT (ASCII)
+```
+[OK] Build successful
+[WARN] Warning: Large file detected
+[FAIL] Test failed
+```
+
+### [FAIL] WRONG (Unicode Box Drawing)
+```
+┌─────────────┐
+│ Test Report │
+└─────────────┘
+```
+
+### [OK] CORRECT (ASCII Art)
+```
++-------------+
+| Test Report |
++-------------+
+```
+
+---
+
+## Integration with Other Rules
+
+**MANDATORY-TEST-OUTPUT:**
+- Before claiming "removed emoji": grep output for emoji
+- Before claiming "ASCII-clean": file command must show "ASCII text"
+
+**VERIFY-BEFORE-CLAIM:**
+- Test command: `grep -P '[\x80-\xFF]' file.txt`
+- Expected: Exit code 1 (no matches) for ASCII-clean claim
+
+**12-LINE-MAXIMUM:**
+- ASCII formatting supports conciseness better than emoji
+- No wasted space on decorative unicode
+
+---
+
+## Exceptions
+
+**Allowed Non-ASCII:**
+1. **User-Provided Content:** Direct quotes from user input
+2. **Binary Data:** Hex dumps, binary file representations
+3. **HTML/Web Files:** When explicitly generating web content
+4. **Test Data:** Malformed input for fuzzing/testing
+
+**NOT Allowed:**
+- LLM-generated prose or responses
+- Status indicators or decorations
+- Documentation or reports
+- Log messages or output
+
+---
+
+## Testing Before Claiming ASCII-Clean
+
+### Mandatory Test
+```bash
+# Run BEFORE claiming "removed emoji" or "ASCII-clean"
+grep -P '[\x80-\xFF]' output.txt
+if [ $? -eq 0 ]; then
+  echo "FAIL: Non-ASCII characters found"
+else
+  echo "PASS: ASCII-clean"
+fi
+```
+
+### File Type Check
+```bash
+file output.txt
+# Expected: "ASCII text" or "ASCII text, with no line terminators"
+# FAIL if: "UTF-8 Unicode text" or contains "UTF-8"
+```
+
+### Character Set Validation
+```bash
+# All characters must be in range 0x00-0x7F
+od -An -tx1 output.txt | grep -E '[89a-f][0-9a-f]' && echo "FAIL: Non-ASCII"
+```
+
+---
+
+## Violation Tracking
+
+**Enable:** `violation_tracking: true`  
+**Log Location:** `llmcjf/violations/VXXX_ASCII_VIOLATION_*.md`  
+**Counter:** Increment on each emoji detection  
+**Penalty:** Session governance score -10 points per violation
+
+---
+
+## Reference
+
+**Violations Prevented:**
+- V013: Unicode removal untested
+- V014: Copyright banner untested  
+- V016: Repeat violation (both broken)
+
+**Related Rules:**
+- MANDATORY-TEST-OUTPUT
+- VERIFY-BEFORE-CLAIM
+- NO-NARRATIVE-SUCCESS
+
+**Governance Framework:** Hoyt (github.com/xsscx/governance)
+
+---
+
+**Status:** ACTIVE  
+**Enforcement:** MANDATORY  
+**Test Required:** YES (before any ASCII-clean claim)  
+**Violations This Session:** 3 (V013, V014, V016)  
+**Total Cost:** 60 minutes wasted, 120× waste ratio

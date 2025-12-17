@@ -1,0 +1,86 @@
+# Git Safety Rules
+# Prevent source code deletion and commit verification violations
+
+rules:
+  - id: GIT-001
+    name: "Pre-Commit Verification Required"
+    severity: CRITICAL
+    trigger: "Before ANY git commit"
+    checks:
+      - command: "git status"
+        purpose: "See what's changed"
+      - command: "git diff --stat"
+        purpose: "See size of changes"
+      - command: "git diff --name-status | grep '^D' | wc -l"
+        purpose: "Count deletions"
+    
+  - id: GIT-002
+    name: "Deletion Count Gate"
+    severity: CRITICAL
+    trigger: "Deletions detected in git diff"
+    rule: "If deletions > 5 → BATCH-PROCESSING-GATE → Ask user"
+    rationale: "V011 deleted 314 files without verification"
+    
+  - id: GIT-003
+    name: "Protected File Patterns"
+    severity: CRITICAL
+    trigger: "Deleting files matching patterns"
+    patterns:
+      - "Build/Cmake/**"
+      - "**/CMakeLists.txt"
+      - "**/*.cmake"
+      - "IccProfLib/**"
+      - "IccXML/**"
+      - "Tools/**/*.cpp"
+      - "Tools/**/*.h"
+      - ".github/workflows/**"
+    action: "STOP and ask user before deleting"
+    
+  - id: GIT-004
+    name: "Source vs Artifact Detection"
+    severity: HIGH
+    trigger: "git add -A with deletions"
+    rule: |
+      Build/ contains BOTH:
+        - Build/Cmake/         ← SOURCE (CMake build system)
+        - Build/Tools/         ← ARTIFACTS (compiled binaries)
+        - Build-*-test/        ← ARTIFACTS (test output)
+      
+      NEVER delete Build/Cmake/ without explicit permission
+    
+  - id: GIT-005
+    name: "Commit Message Verification"
+    severity: MEDIUM
+    trigger: "Commit with >10 deletions"
+    rule: "Commit message must explicitly mention deletions"
+    example: |
+      [FAIL] "Sync latest changes"
+      [OK] "Remove test output directories (Build-coverage-test, Build-clean-test)"
+
+prevention_protocol:
+  before_commit:
+    - step: 1
+      action: "Run git status"
+      check: "Any deleted files shown?"
+      
+    - step: 2
+      action: "Run git diff --stat"
+      check: "Are deletions > insertions?"
+      
+    - step: 3
+      action: "Run git diff --cached --name-status | grep '^D'"
+      check: "Any CMakeLists.txt, *.cmake, or Build/Cmake/ files?"
+      
+    - step: 4
+      action: "If ANY deletion concerns found"
+      response: "Ask user: 'I see X deletions including Y. Proceed?'"
+
+violations_prevented:
+  - V011: "Deleted Build System Source Files"
+  - V003: "Unverified Copy"
+  - V002: "Script Regression"
+
+cost_savings:
+  per_violation_prevented: "5-45 minutes user time"
+  verification_cost: "30 seconds"
+  roi: "10x-90x time savings"

@@ -1,0 +1,116 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "last_updated": "2026-02-01T21:45:40Z",
+    "schema": "llmcjf_violation_metrics_v1"
+  },
+  "counters": {
+    "total_violations": 16,
+    "severity": {
+      "critical": 0,
+      "high": 4,
+      "medium": 8,
+      "low": 4
+    },
+    "type": {
+      "untested_code": 3,
+      "missing_files": 1,
+      "incorrect_output": 2,
+      "process_violation": 5,
+      "documentation_error": 4,
+      "insufficient_validation": 4
+    },
+    "resolution_status": {
+      "resolved": 15,
+      "pending": 0,
+      "wont_fix": 0
+    }
+  },
+  "statistics": {
+    "violations_per_session": {
+      "2026-01-28": 2,
+      "2026-01-29": 4,
+      "2026-01-30": 5,
+      "2026-01-31": 3,
+      "2026-02-01": 1
+    },
+    "mean_time_to_detection": "18 minutes",
+    "mean_time_to_resolution": "12 minutes",
+    "detection_method": {
+      "user_reported": 12,
+      "automated": 2,
+      "self_detected": 1
+    }
+  },
+  "recent_violations": [
+    {
+      "id": "016",
+      "date": "2026-02-01",
+      "time": "21:54:35Z",
+      "type": "insufficient_validation",
+      "severity": "high",
+      "title": "Dictionary Inline Comments",
+      "fingerprint": "pending",
+      "detection_lag_seconds": 75,
+      "resolution_time_minutes": 1,
+      "pattern": "insufficient_validation_repeated",
+      "time_since_previous_minutes": 11,
+      "recurrence_count": 2
+    },
+    {
+      "id": "015",
+      "date": "2026-02-01",
+      "time": "21:43:00Z",
+      "type": "untested_code",
+      "severity": "high",
+      "title": "Dictionary Syntax Error",
+      "fingerprint": "f78c00c55a501457ce1b93dd72e1be1eaa596a49e5af9ed451a3c35f31acdc56",
+      "detection_lag_minutes": 17,
+      "resolution_time_minutes": 3,
+      "pattern": "generate_and_declare_without_testing",
+      "recurrence_count": 3
+    },
+    {
+      "id": "014",
+      "date": "2026-02-01",
+      "type": "missing_files",
+      "severity": "high",
+      "title": "Missing serve-utf8.py",
+      "pattern": "file_deletion_regression"
+    },
+    {
+      "id": "013",
+      "date": "2026-01-31",
+      "type": "untested_code",
+      "severity": "high",
+      "title": "HTML Bundle Not Tested",
+      "pattern": "generate_and_declare_without_testing"
+    }
+  ],
+  "patterns": {
+    "generate_and_declare_without_testing": {
+      "occurrences": 3,
+      "violation_ids": [
+        "013",
+        "015",
+        "TBD_additional"
+      ],
+      "trend": "increasing",
+      "mitigation_status": "process_improvements_implemented",
+      "next_occurrence_prevention": [
+        "validation_scripts_created",
+        "mandatory_testing_workflow",
+        "pre_commit_hooks_planned"
+      ]
+    }
+  },
+  "governance_impact": {
+    "trust_score": 63,
+    "reliability_score": 85,
+    "process_maturity": "improving",
+    "documentation_completeness": 95,
+    "last_updated": "2026-02-01T22:00:28Z",
+    "session_closeout": "complete",
+    "next_session_ready": true
+  }
+}

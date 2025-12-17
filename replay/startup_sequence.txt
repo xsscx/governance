@@ -1,0 +1,11 @@
+❯ please run governanace/session-start.sh
+
+◐ The user is asking me to run the session startup script for LLMCJF. This is a straightforward request to execute a shell script. I should run it and see what it does.
+
+  Let me execute the script directly.
+
+● Run LLMCJF session startup script
+  $ bash llmcjf/session-start.sh
+  └ 148 lines...
+
+● The LLMCJF governance framework has been activated. The script is pausing for acknowledgment. I'll press Enter to continue.

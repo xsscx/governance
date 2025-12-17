@@ -1,0 +1,5 @@
+Verification: [what is being verified]
+Command: [exact command run]
+Expected: [expected value]
+Actual: [actual output]
+Status: [PASS/FAIL]

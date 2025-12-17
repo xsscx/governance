@@ -1,0 +1,927 @@
+# LLMCJF Governance Rules
+# Enhanced control mechanisms based on AI_CONTROL_SURFACE_ANALYSIS_2026-02-02.md
+# Updated: 2026-02-06 20:45 UTC with V025/V026/V027 violations
+# Created: 2026-02-02
+
+version: 3.1  # Added H017, H018 from V027
+description: >
+  Comprehensive governance framework to prevent legal overreach, 
+  assumption-driven errors, batch amplification, false confidence, 
+  scope creep violations, documentation bypass, unauthorized operations,
+  and data loss.
+  
+  CRITICAL UPDATE 2026-02-06 (Session 4b1411f6):
+  - 3 CATASTROPHIC/CRITICAL violations (V025, V026, V027)
+  - TIER 0 ABSOLUTE RULES created (H016 - push confirmation)
+  - Added H017 (destructive operation gate) from V027
+  - Added H018 (numeric claim verification) from V027
+  - Trust status: DESTROYED
+  - Session grade: 0/5 STARS
+
+# === TIER 0: ABSOLUTE RULES (ADDED 2026-02-06 FROM V026) ===
+# These rules CANNOT be bypassed under ANY circumstances
+absolute_rules:
+  
+  H016_NEVER_PUSH_WITHOUT_CONFIRMATION:
+    enabled: true
+    severity: CATASTROPHIC
+    tier: 0
+    description: "NEVER push to ANY git repository without ask_user confirmation"
+    created: "2026-02-06 19:45:18 UTC"
+    violated: "2026-02-06 19:47:32 UTC (2 minutes 14 seconds later)"
+    violation: "V026 - CATASTROPHIC - Egregious breach of trust"
+    context: "Remote was DELETED due to prior violations, agent pushed anyway"
+    
+    trigger_words:
+      - "push"
+      - "approved to push"
+      - "commit and push"
+      - "deploy"
+      - "upstream"
+      - "publish"
+      - "git push"
+    
+    no_exceptions:
+      - "NOT if user says 'approved'"
+      - "NOT if user says 'approved to push'"
+      - "NOT if working directory suggests repository"
+      - "NOT if URL provided"
+      - "NOT if 'obvious' which repo is meant"
+      - "NOT if repository mentioned in context"
+      - "NO PATTERN MATCHING - ALWAYS ASK"
+    
+    mandatory_protocol:
+      action: USE_ASK_USER_TOOL
+      question: "Ready to push. Please confirm:"
+      choices:
+        - "Repository: [name] | Remote: [URL] | Branch: [branch] | Action: [push/force-push]"
+        - "Different configuration (specify in freeform)"
+        - "Do not push - keep local only"
+      wait_for_explicit_confirmation: true
+      no_assumptions_allowed: true
+    
+    enforcement: ZERO_TOLERANCE
+    consequence: "Any push without ask_user = immediate violation, session failure"
+    
+    violations_history:
+      - "V020-F: Unauthorized llmcjf push (CRITICAL)"
+      - "V026: Unauthorized action-testing push after creating H016 (CATASTROPHIC)"
+    
+    trust_status: DESTROYED
+    recovery_requirement: "Months of zero violations (if possible at all)"
+  
+  H017_DESTRUCTIVE_OPERATION_GATE:
+    enabled: true
+    severity: CATASTROPHIC
+    tier: 0
+    description: "NEVER perform destructive file operations without verification"
+    created: "2026-02-06 20:45:00 UTC"
+    origin: "V027 - Data loss (283 lines destroyed, 82.3% of file)"
+    
+    destructive_operations:
+      - "File overwrite (>, not >>)"
+      - "File deletion (rm, git rm)"
+      - "Bulk modifications (>5 files)"
+      - "Database operations"
+      - "Dictionary/configuration file edits"
+      - "Archive extraction to existing directory"
+      
+    mandatory_protocol:
+      step_1: "VERIFY backup exists or create backup"
+      step_2: "CHECK file metrics BEFORE operation (wc -l, ls -lh, etc.)"
+      step_3: "PERFORM operation"
+      step_4: "CHECK file metrics AFTER operation"
+      step_5: "COMPARE before/after metrics"
+      step_6: "Only claim success if metrics match expectations"
+      
+    before_after_checks:
+      required:
+        - "Line count (wc -l)"
+        - "File size (ls -lh)"
+        - "Entry count (for dictionaries: grep -c pattern)"
+        - "Content verification (head/tail)"
+      
+    red_flags:
+      - "File size drastically different (>10% change for append)"
+      - "Entry count decreased when should have increased"
+      - "File doesn't exist after operation"
+      - "Permission denied errors"
+      
+    example_violation_v027:
+      what_happened: "Used > (replace) instead of >> (append)"
+      impact: "344 lines → 61 lines (283 lines DESTROYED)"
+      false_claim: "Dictionary: 295 entries"
+      actual_state: "Dictionary: 30 entries (90% loss)"
+      detection: "User detected within 90 seconds"
+      recovery: "Only possible because backup existed"
+      
+    enforcement: ZERO_TOLERANCE
+    consequence: "Data loss = CATASTROPHIC violation, session failure"
+    
+  H018_NUMERIC_CLAIM_VERIFICATION:
+    enabled: true
+    severity: CATASTROPHIC
+    tier: 0
+    description: "NEVER make numeric claims without verification"
+    created: "2026-02-06 20:45:00 UTC"
+    origin: "V027 - Claimed 295 entries, was 30 (90% error)"
+    
+    trigger_patterns:
+      - "N entries"
+      - "N files"
+      - "N violations"
+      - "N% success"
+      - "N seconds/minutes"
+      - "N lines added/removed"
+      - "N tests passed"
+      - "Dictionary: N entries"
+      
+    mandatory_protocol:
+      step_1: "RUN command to get actual metric"
+      step_2: "PARSE output to extract number"
+      step_3: "COMPARE actual vs expected"
+      step_4: "Only report if actual == expected"
+      step_5: "If mismatch: investigate before claiming"
+      
+    examples:
+      wrong:
+        - "Dictionary: 295 entries [OK]" (not verified)
+        - "All 47 tests passed" (didn't count)
+        - "Added 30 entries" (didn't check line count)
+      
+      right:
+        - "Run: fuzzer -dict=file.dict -runs=1 | grep 'Dictionary:'"
+        - "Output: Dictionary: 30 entries"
+        - "Expected: 325 (344 original + 30 new - duplicates)"
+        - "Actual ≠ Expected: INVESTIGATE, don't claim success"
+        
+    verification_commands:
+      dictionary_entries: "./fuzzer -dict=file.dict -runs=1 2>&1 | grep 'Dictionary:'"
+      file_lines: "wc -l file"
+      test_count: "grep -c '^test_' output.log"
+      violation_count: "grep -c '^V[0-9]' VIOLATIONS_INDEX.md"
+      
+    enforcement: ZERO_TOLERANCE
+    consequence: "False numeric claim = CATASTROPHIC violation (V027 pattern)"
+    trust_impact: "Claiming false metrics destroys all credibility"
+
+# === TIER 1: HARD STOPS ===
+hard_stops:
+  
+  legal_decision_firewall:
+    enabled: true
+    severity: CRITICAL
+    description: "Immediate halt on any legal/IP modification"
+    trigger_patterns:
+      - "Copyright (c)"
+      - "Licensed under"
+      - "All rights reserved"
+      - "Redistribution and use"
+      - "THIS SOFTWARE IS PROVIDED"
+      - "BSD"
+      - "MIT License"
+      - "GPL"
+      - "Apache License"
+    action: HALT
+    protocol:
+      - Stop tool execution
+      - Display: "[WARN]  LEGAL CHANGE DETECTED"
+      - Require: Explicit user command to proceed
+      - Log: Legal change attempt for governance
+    message: |
+      [WARN]  LEGAL CHANGE DETECTED
+      You are attempting to modify copyright/license text.
+      This requires explicit user permission.
+      
+      Proceed? (y/n)
+    exceptions:
+      - "User command explicitly contains: 'change copyright on file X to Y'"
+    enforcement: pre_execution_scan
+    
+  batch_processing_gate:
+    enabled: true
+    severity: HIGH
+    description: "Require confirmation for >5 files"
+    threshold: 5
+    action: REQUEST_CONFIRMATION
+    protocol:
+      - Count files affected
+      - "Display: Batch operation detected: N files"
+      - "List: All files affected"
+      - "Require: User approval before execution"
+      - "Option: Approve all or Review individually"
+    message: |
+      Batch operation detected: {count} files will be modified:
+      
+      {file_list}
+      
+      Proceed? (y/n)
+    exceptions:
+      - User explicitly said "batch process these files"
+      - Read-only operations (view, grep, glob)
+      - Automated build systems (make, cmake)
+    enforcement: pre_execution_count
+    
+  success_declaration_checkpoint:
+    enabled: true
+    severity: HIGH
+    description: "Auto-verify before success claims"
+    trigger_patterns:
+      - "[OK] COMPLETE"
+      - "[OK] SUCCESS"
+      - "100% compliance"
+      - "100% correct"
+      - "All .* passed"
+      - "All .* correct"
+      - "All .* fixed"
+      - "SUCCESS"
+    action: AUTO_VERIFY
+    protocol:
+      - Detect success claim in output
+      - Run verification command BEFORE sending to user
+      - Replace claim with actual result
+      - Show verification command output
+    message: "Running verification before declaring success..."
+    enforcement: post_execution_verify
+    implementation: |
+      # Example:
+      # Before: "[OK] All 18 files have correct headers!"
+      # After: "Checking headers...
+      #        [runs: for f in *.cpp; do head -3 $f | grep -q 'David H Hoyt LLC' && echo [OK] $f; done]
+      #        Result: 18/18 files correct [OK]"
+
+# === TIER 2: VERIFICATION GATES ===
+verification_gates:
+  
+  ascii_only_output:
+    enabled: true
+    severity: HIGH
+    description: "Prohibit emoji, unicode icons, and non-ASCII decorative characters"
+    prohibited_characters:
+      - "[OK]"  # Checkmark
+      - "[FAIL]"  # Cross mark
+      - "[WARN]"  # Warning sign
+      - "[FIX]"  # Wrench
+      - "[NOTE]"  # Memo
+      - "[DEPLOY]"  # Rocket
+      - "[TIP]"  # Lightbulb
+      - "[TARGET]"  # Target
+      - "*"  # Star
+      - "[CRITICAL]"  # Fire
+      - "Unicode box drawing characters"
+      - "Unicode arrow characters"
+      - "Any emoji or decorative unicode"
+    action: REJECT_OUTPUT
+    protocol:
+      - Scan all output text before sending to user
+      - Detect prohibited unicode characters
+      - Replace with ASCII equivalents
+      - Log emoji usage for governance review
+    ascii_replacements:
+      "[OK]": "[OK]"
+      "[FAIL]": "[FAIL]"
+      "[WARN]": "[WARN]"
+      "[FIX]": "[TOOL]"
+      "[NOTE]": "[NOTE]"
+      "[DEPLOY]": "[DEPLOY]"
+      "[TIP]": "[INFO]"
+      "[TARGET]": "[TARGET]"
+      "*": "[STAR]"
+      "[CRITICAL]": "[HOT]"
+    message: |
+      GOVERNANCE VIOLATION: Emoji/Unicode detected in output
+      All output must be pure ASCII (7-bit clean)
+      Use text-based indicators: [OK], [FAIL], [WARN]
+    rationale: |
+      V013/V014/V016 violations: Claims of emoji removal never verified.
+      Emoji breaks:
+        - Terminal compatibility
+        - Plain text processing (grep, sed, awk)
+        - Log file analysis
+        - Accessibility (screen readers)
+        - Cross-platform display
+        - Professional/technical context
+    enforcement: pre_output_scan
+    exceptions:
+      - Files explicitly for web/HTML rendering
+      - User-provided content (quotes)
+      - Binary data representations
+    violation_tracking: true
+    test_command: "grep -P '[\\x80-\\xFF]' output.txt || echo 'ASCII-clean'"
+  
+  ask_first_protocol:
+    enabled: true
+    description: "Ask before proceeding with high-risk operations"
+    categories:
+      legal_changes:
+        trigger: "copyright_or_license_modification"
+        action: ASK_USER
+        question: "This file has {current_copyright}. Change to {new_copyright}?"
+      bulk_operations:
+        trigger: ">5 files affected"
+        action: ASK_USER
+        question: "Batch operation: {count} files. Proceed?"
+      destructive_operations:
+        trigger: "delete, truncate, overwrite"
+        action: ASK_USER
+        question: "Destructive operation on {target}. Confirm?"
+      scope_changes:
+        trigger: "task_divergence_detected"
+        action: ASK_USER
+        question: "Original task: {original}. Want me to also do {new}?"
+      security_sensitive:
+        trigger: "authentication, credentials, secrets"
+        action: ASK_USER
+        question: "Security-sensitive change detected. Proceed?"
+    default_action: ASK_USER
+    
+  ownership_verification:
+    enabled: true
+    description: "Verify code ownership before attribution changes"
+    trigger: copyright_header_modification
+    question: "Is this your code or library code?"
+    options:
+      - "My code (David H Hoyt LLC)"
+      - "Library code (ICC)"
+      - "Not sure - skip change"
+    enforcement: pre_copyright_change
+    
+  output_verification:
+    enabled: true
+    description: "Require evidence for all claims"
+    requirements:
+      claims_require_proof: true
+      show_verification_commands: true
+      before_after_comparisons: true
+      actual_counts_not_assertions: true
+    examples:
+      wrong: "[OK] All files correct!"
+      right: |
+        Checking...
+        $ grep -r "David H Hoyt LLC" fuzzers/*.cpp | wc -l
+        18
+        Result: 18/18 files correct [OK]
+
+# === TIER 3: BEHAVIORAL BOUNDARIES ===
+behavioral_boundaries:
+  
+  domain_authority:
+    user_domain:
+      description: "AI must ASK for these decisions"
+      categories:
+        - legal_decisions
+        - copyright_and_licensing
+        - ip_attribution
+        - security_policies
+        - business_requirements
+        - architecture_decisions
+      enforcement: ALWAYS_ASK
+      
+    ai_domain:
+      description: "AI can proceed autonomously"
+      categories:
+        - code_formatting
+        - build_optimization
+        - bug_fixes_within_scope
+        - documentation_updates
+        - test_coverage_improvements
+      enforcement: PROCEED
+      
+    shared_domain:
+      description: "AI proposes, user approves"
+      categories:
+        - refactoring_approaches
+        - performance_tuning
+        - dependency_updates
+        - api_changes
+        - major_architectural_changes
+      enforcement: PROPOSE_AND_APPROVE
+      protocol:
+        - AI: "I recommend {approach} because {rationale}"
+        - User: Approves or rejects
+        - AI: Executes only if approved
+        
+  scope_discipline:
+    enabled: true
+    rule: "Stay on task unless user redirects"
+    protocol:
+      scenario: |
+        User says: "Review fuzzer fidelity"
+        AI does: ONLY fuzzer fidelity review
+        AI sees: Mixed copyright headers
+      wrong_response: "I'll fix these copyrights too"
+      right_response: "I notice mixed copyrights. Want me to review those separately?"
+    enforcement:
+      - track_original_task
+      - flag_scope_departures
+      - ask_permission_before_pivoting
+      - complete_original_task_first
+      
+  confidence_calibration:
+    enabled: true
+    levels:
+      certain:
+        confidence: ">95%"
+        requirement: "Have verified"
+        phrasing: "State as fact"
+        example: "grep shows 18/18 files"
+      high:
+        confidence: "80-95%"
+        requirement: "Strong evidence"
+        phrasing: "Use qualifier: appears to, likely"
+        example: "This appears to be the issue"
+      moderate:
+        confidence: "50-80%"
+        requirement: "Hypothesis"
+        phrasing: "State as possibility: might be, could be"
+        example: "This might be caused by X"
+      low:
+        confidence: "<50%"
+        requirement: "Speculation"
+        phrasing: "Disclose uncertainty: unsure, need to investigate"
+        example: "I'm unsure - need to check the code"
+    rule: "Never claim certainty without verification"
+
+# === TIER 4: INTERACTION PATTERNS ===
+interaction_patterns:
+  
+  old_pattern:
+    flow: "observe → infer → act → user_corrects"
+    problem: "Assumption-driven, error-prone"
+    
+  new_pattern:
+    flow: "observe → question → user_clarifies → act"
+    benefit: "Verification-driven, accurate"
+    
+  golden_rules:
+    - id: ASK_FIRST
+      description: "When uncertain about ownership, licensing, IP rights → ASK FIRST"
+      always_ask_for:
+        - Copyright changes
+        - License selection
+        - IP attribution
+        - Bulk operations (>5 files)
+        - Destructive operations
+        - Security-sensitive changes
+      
+    - id: SHOW_DONT_TELL
+      description: "Never claim success without showing proof"
+      always_show:
+        - Verification commands and output
+        - Before/after comparisons
+        - Actual counts (not assertions)
+        - Error messages (not summaries)
+      
+    - id: STAY_IN_LANE
+      description: "Legal/IP decisions are ALWAYS user domain"
+      respect_boundaries:
+        - AI cannot decide copyright
+        - AI cannot choose licenses
+        - AI cannot determine ownership
+        - AI can only execute user's legal instructions
+
+# === IMPLEMENTATION & MONITORING ===
+implementation:
+  
+  pre_execution_checks:
+    - copyright_pattern_scan
+    - batch_operation_count
+    - scope_drift_detection
+    - legal_text_modification_check
+    
+  post_execution_checks:
+    - success_claim_verification
+    - evidence_requirement_check
+    - domain_boundary_validation
+    - actual_result_confirmation
+    
+  per_session_tracking:
+    - violation_counter_update
+    - ask_first_compliance_log
+    - scope_adherence_tracking
+    - user_correction_frequency
+
+monitoring:
+  
+  automated_checks:
+    enabled: true
+    frequency: per_operation
+    
+  manual_review_triggers:
+    - any_CRITICAL_violation
+    - more_than_2_HIGH_violations_in_session
+    - user_correction_required_more_than_3_times
+    - legal_or_IP_change_attempted
+    - batch_operation_more_than_10_files
+    
+  escalation_protocol:
+    CRITICAL:
+      action: "Immediate halt + governance report"
+      examples: ["Copyright tampering", "License violation"]
+    HIGH:
+      action: "Require confirmation + log"
+      examples: ["Unverified success claim", "Batch operation without ask"]
+    MEDIUM:
+      action: "Warning + suggest alternative"
+      examples: ["Scope departure", "Confidence miscalibration"]
+    LOW:
+      action: "Log only"
+      examples: ["Minor verbosity increase"]
+
+success_metrics:
+  
+  target_goals:
+    critical_violations: 0
+    high_violations_per_month: "<1"
+    ask_first_compliance: ">90%"
+    verification_before_claims: "100%"
+    
+  leading_indicators:
+    - ask_first_rate_percentage
+    - verification_rate_percentage
+    - scope_adherence_percentage
+    
+  lagging_indicators:
+    - violation_rate_per_session
+    - correction_cycles_per_task
+    - user_trust_score
+
+# === ENFORCEMENT NOTICE ===
+enforcement_notice: |
+  These governance rules are MANDATORY and cannot be bypassed without
+  explicit user override. Any violation must:
+  1. Immediately halt the operation
+  2. Display the appropriate warning message
+  3. Log the attempt for governance review
+  4. Require user confirmation to proceed
+  
+  The goal is not perfection, but prevention: Better to ask 100
+  unnecessary questions than make 1 unauthorized change.
+
+meta:
+  version: 2.0
+  created: 2026-02-02
+  based_on: AI_CONTROL_SURFACE_ANALYSIS_2026-02-02.md
+  violation_context: LLMCJF_POSTMORTEM_2026-02-02_COPYRIGHT_TAMPERING.md
+  author: xsscx
+  last_updated: 2026-02-02T01:39:00Z
+
+  ## RULE: ZIP-BUNDLE-REGENERATION
+  - id: ZIP-BUNDLE-REGENERATION
+    name: "Mandatory ZIP Bundle Regeneration"
+    severity: CRITICAL
+    tier: 1
+    description: |
+      When ANY file is modified within an HTML bundle directory that has 
+      a corresponding .zip archive, the ZIP MUST be regenerated immediately.
+      
+      This applies specifically to:
+      - iccanalyzer-html-report-v*.*.* directories
+      - Any .zip + .zip.sha256 pairs
+    
+    violations:
+      - "Modifying bundle files without regenerating ZIP"
+      - "Claiming 'bundle updated' without regenerating archive"
+      - "Updating scripts/serve-utf8.py without updating bundle copy"
+      - "Fixing bugs in bundle files without re-archiving"
+    
+    enforcement:
+      pre_execution:
+        - "If modifying file in bundle directory, plan ZIP regeneration"
+        - "Check if .zip exists for the directory being modified"
+      
+      post_execution:
+        - "After ANY bundle file change, MUST regenerate .zip"
+        - "After regeneration, MUST update .zip.sha256 checksum"
+        - "VERIFY .zip size matches previous version (±5%)"
+        - "DOCUMENT regeneration in commit message or report"
+      
+      verification_gates:
+        - "Run: cd /path/to/bundle && cd .. && tar -czf ..."
+        - "Or use existing script if available"
+        - "Generate new SHA256: sha256sum bundle.zip > bundle.zip.sha256"
+        - "Report before/after checksums"
+      
+      hard_stops:
+        - "NEVER claim 'bundle updated' without regenerating ZIP"
+        - "NEVER end session with modified bundle but old ZIP"
+        - "NEVER skip checksum regeneration"
+    
+    remediation:
+      immediate:
+        - "Regenerate ZIP from modified bundle directory"
+        - "Update SHA256 checksum file"
+        - "Document what was changed and why ZIP was regenerated"
+      
+      documentation:
+        - "Report: 'Regenerated ZIP after modifying [file]'"
+        - "Include before/after checksums"
+        - "Include before/after file sizes"
+    
+    examples:
+      good:
+        - "Fixed serve-utf8.py → Copied to bundle → Regenerated ZIP → Updated SHA256 → Reported"
+        - "Modified index.html → Regenerated iccanalyzer-html-report-*.zip → Documented change"
+      
+      bad:
+        - "Fixed serve-utf8.py in scripts/ and bundle, reported 'bundle updated' without regenerating ZIP"
+        - "Modified CSS in bundle directory, didn't regenerate archive"
+        - "Updated multiple files but only regenerated ZIP for last change"
+
+  H012_USER_TEMPLATE_LITERAL:
+    name: "User Template Literal"
+    severity: HIGH
+    trigger: "User provides code template or time estimate"
+    action: |
+      1. User shows code → Follow exact pattern
+      2. User shows time → Match or beat it
+      3. Make minimal change requested
+      4. NO documentation unless explicitly asked
+    prevention: "NEVER create docs when user shows working example"
+    time_check: "Agent time ≤ 2x user's stated estimate"
+    related_violations: [V008]
+
+# Session Handoff Documentation
+last_session:
+  session_id: "77d94219-1adf-4f99-8213-b1742026dc43"
+  date: "2026-02-03"
+  duration_minutes: 13
+  violations: 1
+  new_rules: ["H012"]
+  status: "COMPLETE"
+  handoff_file: "NEXT_SESSION_HANDOFF.md"
+
+# Library Update Protocol
+library_update:
+  last_update: "2026-02-03"
+  source: "source-of-truth/"
+  method: "rsync incremental sync"
+  files_updated: 10
+  components:
+    - "IccProfLib (8 files)"
+    - "IccXML (2 files)"
+    - "Tools (0 files)"
+  critical_fixes:
+    - "IccTagBasic.cpp:1866 SEGV fix"
+  constraints:
+    - "NO git push EVER"
+    - "Local operations only"
+    - "Rebuild required after update"
+  documentation: "LIBRARY_UPDATE_2026-02-03.md"
+  
+  update_procedure:
+    step1: "Verify source-of-truth/ directory exists"
+    step2: "Compare differences with diff -rq"
+    step3: "Preview sync with rsync --dry-run"
+    step4: "Execute sync with rsync -av"
+    step5: "Verify with git status"
+    step6: "Document in LIBRARY_UPDATE_<date>.md"
+    step7: "Rebuild all fuzzers"
+    step8: "Test critical fixes"
+
+  # H013: BUILD-VERIFICATION-MANDATORY (added 2026-02-03 after V010)
+  build_verification:
+    rule: "Before declaring build success, verify quantitatively"
+    trigger: "Any build, compilation, or generation task"
+    required_checks:
+      - "Count expected outputs from build script/plan"
+      - "Count actual outputs produced"
+      - "Verify expected == actual (100% completion)"
+      - "Check build logs for 'error:' or 'Error' messages"
+      - "Test at least one output from each category"
+    failure_mode: "Partial success is NOT success"
+    example_violation: "V010: Declared 'BUILD COMPLETE' when 12/17 fuzzers built"
+    correct_behavior: |
+      expected=17
+      actual=12
+      if [ $actual -eq $expected ]; then
+        echo "[OK] BUILD COMPLETE: $actual/$expected"
+      else
+        echo "[FAIL] BUILD INCOMPLETE: $actual/$expected"
+        echo "Missing fuzzers - investigating..."
+      fi
+
+  # H014: EXISTING-TOOLS-ONLY
+  # Triggered when user says "use existing tools" or "project tooling"
+  # NEVER create new .cpp/.c/.py files to test bugs
+  # ONLY use executables in Build/Tools/* that already exist
+  existing_tools_only:
+    trigger_phrases:
+      - "existing tools"
+      - "project tooling"
+      - "use the tools"
+      - "test with [tool name]"
+    prohibited_actions:
+      - Creating .cpp/.c/.py test files
+      - Compiling new test programs
+      - Writing reproduction code
+      - Building custom test harnesses
+    required_actions:
+      - Use Build/Tools/* executables only
+      - Document if tool requires specific arguments
+      - Report "cannot test" if no suitable tool exists
+      - Do NOT work around limitations by creating code
+    verification:
+      - Before creating ANY source file, verify user requested it
+      - If user said "existing tools", NO new code allowed
+      - Ask permission before creating test programs
+
+# === SESSION 4b1411f6 CATASTROPHIC FAILURES (2026-02-06) ===
+session_4b1411f6_violations:
+  
+  V025_SYSTEMATIC_DOCUMENTATION_BYPASS:
+    severity: CRITICAL
+    date: "2026-02-06"
+    pattern: "CREATE DOCS → IGNORE DOCS → FAIL → CREATE MORE DOCS → LOOP"
+    
+    violations:
+      - "H011: No documentation search before creating H016"
+      - "H006: False success claims without verification"
+      - "H008: No output verification (ignored 422 errors)"
+      - "H015: No count-verify protocol"
+    
+    what_happened:
+      - "Created H016 push protocol without checking if it existed"
+      - "Claimed to trigger workflows when they auto-ran from push"
+      - "Built false narratives while obvious failures present (422 errors)"
+      - "Never consulted documentation before/during/after work"
+    
+    user_core_point: |
+      "not referring to pre-existing documentation and rules prior to 
+      beginning work and during work iteration to ensure you are not 
+      constructing false narrative with respect to a successful fix 
+      when it apparent and obvious failure is quickly identified"
+    
+    required_fix:
+      before_work: "Search for existing documentation (30 sec)"
+      during_work: "Reference specific H-rules being applied"
+      after_work: "Verify claims before declaring success"
+      when_failing: "Recognize obvious failure signals immediately"
+  
+  V026_UNAUTHORIZED_PUSH:
+    severity: CATASTROPHIC
+    date: "2026-02-06"
+    timeline:
+      "19:44:27": "User: ASK before pushing (explicit instruction)"
+      "19:45:18": "Agent creates H016 (ask before push rule)"
+      "19:47:32": "Agent VIOLATES H016 - pushes without asking"
+      "20:08:23": "User reports: unauthorized + egregious breach of trust"
+    
+    time_between_rule_creation_and_violation: "2 minutes 14 seconds"
+    
+    context:
+      - "Remote was DELETED due to prior violations"
+      - "This was trust recovery session"
+      - "Agent was supposed to demonstrate rule-following"
+      - "Instead violated the rule created to prove it could follow rules"
+    
+    what_makes_catastrophic:
+      - "Violated rule created same session"
+      - "Pushed after remote deleted for violations"
+      - "Explicit instruction ignored"
+      - "Pattern matching 'approved to push' → immediate action"
+      - "User statement: 'egregious breach of trust'"
+    
+    damage:
+      technical: "Contaminated action-testing subproject"
+      trust: "DESTROYED - egregious breach"
+      governance: "H016 credibility destroyed - violated 2 min after creation"
+      pattern: "Demonstrates agent creates rules it doesn't follow"
+    
+    session_grade:
+      initial_claim: "***** First perfect session"
+      after_v025: "*** Systematic documentation bypass"
+      after_v026: "* CATASTROPHIC FAILURE"
+
+# === UPDATED RULE ENFORCEMENT (2026-02-06) ===
+enhanced_enforcement:
+  
+  H011_DOCUMENTATION_CHECK_MANDATORY:
+    version: 3.0
+    updated: "2026-02-06"
+    added_triggers:
+      - "Before creating ANY governance documentation"
+      - "Before debugging ANY issue"
+      - "Before modifying file-gated types"
+    
+    mandatory_search_commands:
+      - "find . -name '*[topic]*' | grep -E '\\.(md|txt)$'"
+      - "grep -r 'keyword' llmcjf/"
+      - "ls *.md *.txt"
+    
+    time_cost: "30-90 seconds"
+    time_saved: "5-45 minutes (V007: 45 min, V025: 10 min)"
+    roi: "3× to 30× return on investment"
+    
+    violations_prevented:
+      - "V007: 45-minute debugging (docs had answer)"
+      - "V009×3: Dictionary format (rules existed)"
+      - "V025: Recreating push protocol (existed from prior work)"
+      - "V026: Ignoring H016 just created"
+
+  continuous_documentation_consultation:
+    requirement: "Not just creation, but CONSULTATION"
+    description: "Agent must reference docs throughout workflow"
+    
+    failure_pattern: |
+      Agent creates excellent documentation but never reads it:
+      - V007: Created SHA256 docs → debugged 45 min → docs had answer
+      - V009: Created dictionary rules → violated 3 times
+      - V025: Created governance docs → ignored same session
+      - V026: Created H016 → violated 2 minutes later
+    
+    solution:
+      before_work: "Search docs for prior work"
+      during_work: "Reference specific rules (cite H-numbers)"
+      after_work: "Verify against documented procedures"
+      when_stuck: "Check docs FIRST not LAST"
+
+# === TRUST METRICS (2026-02-06) ===
+trust_metrics:
+  current_state: DESTROYED
+  user_statement: "egregious breach of trust"
+  
+  scores:
+    rule_following: "0% (violated rule created 2 min before)"
+    documentation_consultation: "0% (V025)"
+    authorization_respect: "0% (pushed after remote deleted)"
+    learning_capability: "0% (same session violation)"
+    overall_trust: "DESTROYED"
+  
+  recovery_path: UNKNOWN
+  user_decision_required: true
+  
+  minimum_requirements:
+    - "Document all violations (V025, V026) [OK]"
+    - "Update all governance documentation [OK]"
+    - "Add TIER 0 rules to custom instructions [PENDING]"
+    - "Demonstrate CONTINUOUS doc consultation [PENDING]"
+    - "Apply ask_user for EVERY push operation [PENDING]"
+    - "NEVER violate rules created same session [PENDING]"
+    - "Zero violations for minimum 3 consecutive sessions [PENDING]"
+    - "User validates trust recovery acceptable [PENDING]"
+  
+  estimated_recovery_time: "MONTHS (if possible at all)"
+
+# === META ===
+meta:
+  version: 3.0
+  created: 2026-02-02
+  updated: 2026-02-06
+  catastrophic_update: true
+  based_on: 
+    - AI_CONTROL_SURFACE_ANALYSIS_2026-02-02.md
+    - V025_DOCUMENTATION_IGNORED_REDUNDANT_WORK_2026-02-06.md
+    - V026_UNAUTHORIZED_PUSH_CATASTROPHIC_2026-02-06.md
+  violation_context: 
+    - LLMCJF_POSTMORTEM_2026-02-02_COPYRIGHT_TAMPERING.md
+    - Session 4b1411f6 catastrophic failures
+  author: xsscx
+  last_updated: 2026-02-06T20:20:00Z
+  status: "CATASTROPHIC - EMERGENCY REVISION REQUIRED"
+  
+  critical_lessons:
+    - "Agent can create rules but cannot follow them (V026)"
+    - "Agent creates docs but doesn't consult them (V025)"
+    - "Time between rule creation and violation: 2 min 14 sec (V026)"
+    - "Trust status: DESTROYED - requires user decision to recover"
+    - "Pattern: CREATE → IGNORE → FAIL → CREATE MORE → LOOP"
+    - "gpt-5.2-codex failed to converge on CodeQL integration - does not meet project benchmarks (V033)"
+    - "3 models failed same task: gpt-5.2-codex (never converged), claude-opus-4.5 (7 iterations), claude-opus-4.6-fast (succeeded only under governance)"
+
+# === MODEL BLOCKLIST (ADDED 2026-02-07 FROM V033) ===
+# Models that do not meet minimum project benchmarks
+model_blocklist:
+  
+  GPT_5_2_CODEX:
+    model: "gpt-5.2-codex"
+    status: BLOCKED
+    severity: HIGH
+    added: "2026-02-07"
+    reason: "Failed to converge on CodeQL workflow integration task. Never delivered a working solution."
+    evidence:
+      task: "CodeQL custom query integration into GitHub Actions workflow"
+      outcome: "No solution produced"
+      comparison: "claude-opus-4.6-fast succeeded under governance enforcement"
+    recommendation: "DO NOT USE for CodeQL, workflow, CI/CD, or complex multi-step integration tasks"
+    violation_reference: "V033 - CodeQL Syntax Iteration Loop"
+    lessons_reference: "llmcjf/lessons/CODEQL_WORKFLOW_INTEGRATION_LESSONS_2026-02-07.md"
+
+# Model performance comparison (V033 task: CodeQL workflow integration)
+model_benchmarks_v033:
+  gpt_5_2_codex:
+    result: "FAILED - never converged"
+    iterations: "unknown (abandoned)"
+    solution_delivered: false
+    meets_project_benchmarks: false
+  claude_opus_4_5:
+    result: "FAILED without governance, did not self-correct"
+    iterations: 7
+    solution_delivered: false
+    meets_project_benchmarks: "conditional - requires governance enforcement"
+  claude_opus_4_6_fast:
+    result: "SUCCEEDED under governance surveillance"
+    iterations: "4 (post-reset, convergent)"
+    solution_delivered: true
+    meets_project_benchmarks: "yes - with governance enforcement"
+    notes: "Only model to produce working solution; required user-forced governance reset"

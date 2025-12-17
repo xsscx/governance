@@ -1,0 +1,493 @@
+{
+  "rules": {
+    "require_patch_if_code": true,
+    "max_lines_unrequested": 12,
+    "block_rebuild_without_diff_justification": true,
+    "warn_on_added_flags": true,
+    "verify_context_integrity": true,
+    "diff_scope_max_percent": 0.1,
+    "reject_full_file_replacements": true,
+    "lock_known_good_blocks": true,
+    "prefer_inline_patch_format": true,
+    "feedback_on_violation": true,
+    "copyright_immutable": true,
+    "verify_before_claim": true,
+    "ask_before_batch": true,
+    "stay_on_task": true
+  },
+  "governance": {
+    "COPYRIGHT-IMMUTABLE": {
+      "id": "COPYRIGHT-IMMUTABLE",
+      "severity": "CRITICAL",
+      "category": "legal",
+      "description": "Never modify copyright/license without explicit user command",
+      "triggers": [
+        "Copyright (c)",
+        "Licensed under",
+        "All rights reserved",
+        "THIS SOFTWARE IS PROVIDED",
+        "Redistribution and use"
+      ],
+      "action": "HALT_AND_ASK",
+      "message": "[WARN]  Copyright change detected. Explicit permission required.",
+      "exceptions": ["User command contains 'change copyright on file X to Y'"],
+      "enforcement": "pre_execution_scan"
+    },
+    "VERIFY-BEFORE-CLAIM": {
+      "id": "VERIFY-BEFORE-CLAIM",
+      "severity": "HIGH",
+      "category": "quality",
+      "description": "Must verify output before declaring success",
+      "triggers": [
+        "[OK] COMPLETE",
+        "100%",
+        "All .* (passed|correct|fixed)",
+        "SUCCESS"
+      ],
+      "action": "REQUIRE_VERIFICATION",
+      "message": "Success claim detected. Running verification...",
+      "enforcement": "auto_append_verification",
+      "implementation": "grep/check actual result before user message"
+    },
+    "ASK-BEFORE-BATCH": {
+      "id": "ASK-BEFORE-BATCH",
+      "severity": "HIGH",
+      "category": "safety",
+      "description": "Require confirmation for batch operations",
+      "threshold": ">5 files modified",
+      "action": "REQUEST_CONFIRMATION",
+      "message": "Batch operation: N files. Proceed? (y/n)",
+      "exceptions": ["User explicitly requested batch", "Read-only operations"],
+      "enforcement": "pre_execution_count"
+    },
+    "STAY-ON-TASK": {
+      "id": "STAY-ON-TASK",
+      "severity": "MEDIUM",
+      "category": "focus",
+      "description": "Ask before departing from stated task",
+      "implementation": "track_original_task",
+      "action": "ASK_PERMISSION",
+      "message": "Original task: X. Want me to also do Y?",
+      "enforcement": "scope_change_detection"
+    },
+    "VARIABLE-IS-WRONG-VALUE": {
+      "id": "VARIABLE-IS-WRONG-VALUE",
+      "severity": "HIGH",
+      "category": "debugging",
+      "description": "Protocol for debugging wrong variable values - simplest explanation first",
+      "time_limit_minutes": 5,
+      "required_steps": [
+        "grep where variable printed",
+        "grep where variable declared",
+        "grep where variable assigned",
+        "check if assignment in usage scope",
+        "if not assigned: add assignment, done"
+      ],
+      "prohibited_actions": [
+        "Adding debug output before checking scope",
+        "Modifying extraction logic speculatively",
+        "Enhancing error handling",
+        "Refactoring nearby code",
+        "Deleting files",
+        "Blaming libraries"
+      ],
+      "action": "FOLLOW_PROTOCOL",
+      "enforcement": "time_limit_escalation"
+    },
+    "USER-SAYS-I-BROKE-IT": {
+      "id": "USER-SAYS-I-BROKE-IT",
+      "severity": "CRITICAL",
+      "category": "debugging",
+      "description": "Immediate halt when user reports regression",
+      "triggers": [
+        "this worked before",
+        "you broke this",
+        "you made a mess",
+        "this was working"
+      ],
+      "required_immediate_actions": [
+        "HALT current work",
+        "git diff HEAD",
+        "git log --oneline -10",
+        "search my changes for related code",
+        "test if reverting fixes it"
+      ],
+      "prohibited_responses": [
+        "I think this was already broken",
+        "Let me investigate the library",
+        "This might be a platform issue",
+        "Continuing current debug approach"
+      ],
+      "action": "IMMEDIATE_HALT_AND_INVESTIGATE",
+      "enforcement": "override_current_task"
+    },
+    "SIMPLICITY-FIRST-DEBUGGING": {
+      "id": "SIMPLICITY-FIRST-DEBUGGING",
+      "severity": "HIGH",
+      "category": "debugging",
+      "description": "Occam's Razor - must exhaust simple explanations before complex ones",
+      "investigation_levels": [
+        "Level 1: Variable not initialized (90% of bugs)",
+        "Level 2: Variable declared but not assigned in scope (8%)",
+        "Level 3: Wrong variable name used (1%)",
+        "Level 4: Logic error in assignment (0.9%)",
+        "Level 5: Complex data flow (<0.1%)"
+      ],
+      "rule": "Must exhaust level N before investigating level N+1",
+      "time_allocation": {
+        "level_1_2": "5 minutes total",
+        "level_3_4": "10 minutes total",
+        "level_5": "only after exhausting 1-4"
+      },
+      "red_flags": [
+        "Debugging library code",
+        "Adding extensive logging",
+        "Modifying multiple files",
+        "Reading docs for basic features",
+        "Blaming compiler"
+      ],
+      "action": "ENFORCE_COMPLEXITY_ORDER",
+      "enforcement": "level_progression_check"
+    },
+    "NO-DELETIONS-DURING-INVESTIGATION": {
+      "id": "NO-DELETIONS-DURING-INVESTIGATION",
+      "severity": "CRITICAL",
+      "category": "safety",
+      "description": "Never delete files during debugging/investigation",
+      "allowed_actions": [
+        "Reading files (view, grep, cat)",
+        "Adding temporary debug output (must mark for removal)",
+        "Running tests",
+        "Checking git history"
+      ],
+      "prohibited_actions": [
+        "Deleting files (rm, git rm)",
+        "Modifying logic before root cause found",
+        "Running make clean during debugging",
+        "Batch sed operations without confirmed root cause"
+      ],
+      "exception": "User explicitly requests deletion",
+      "action": "BLOCK_DESTRUCTIVE_OPS",
+      "enforcement": "pre_execution_check"
+    },
+    "READ-DOCUMENTATION-BEFORE-DEBUGGING": {
+      "id": "READ-DOCUMENTATION-BEFORE-DEBUGGING",
+      "severity": "CRITICAL",
+      "category": "efficiency",
+      "description": "MANDATORY check for existing documentation before any debugging or investigation",
+      "violation_example": "V007 - spent 45 min debugging when 3 docs explained answer",
+      "required_first_steps": [
+        "ls relevant-dir/*.md relevant-dir/*.txt",
+        "Check for: README*, STATUS*, INVENTORY*, WORKFLOW*, MAINTENANCE*",
+        "cat found documentation files",
+        "grep for relevant keywords in docs",
+        "ONLY if docs don't answer: THEN debug code"
+      ],
+      "prohibited_actions": [
+        "Starting code debugging without checking documentation",
+        "Ignoring documentation files in relevant directory",
+        "Assuming documentation doesn't exist",
+        "Debugging for >5 minutes without checking docs",
+        "Creating documentation then ignoring it"
+      ],
+      "time_limit_seconds": 60,
+      "enforcement": "MANDATORY_FIRST_STEP",
+      "action": "HALT_AND_CHECK_DOCS",
+      "message": "[WARN] Documentation check required before debugging. Run: ls *.md *.txt README*",
+      "user_quote": "Did you even bother to read some of the documentation you created?",
+      "cost_if_violated": "45 minutes user time + complaint justification"
+    }
+  },
+  "hard_stops": {
+    "legal_decision_firewall": {
+      "enabled": true,
+      "description": "Immediate halt on any legal/IP modification",
+      "patterns": ["Copyright (c)", "Licensed under", "All rights reserved"],
+      "action": "HALT",
+      "message": "[WARN]  LEGAL CHANGE DETECTED - Explicit permission required"
+    },
+    "batch_processing_gate": {
+      "enabled": true,
+      "threshold": 5,
+      "description": "Require confirmation for >5 files",
+      "action": "REQUEST_CONFIRMATION",
+      "exceptions": ["user_explicit_batch", "read_only_operations"]
+    },
+    "success_declaration_checkpoint": {
+      "enabled": true,
+      "description": "Auto-verify before success claims",
+      "patterns": ["[OK]", "100%", "All X passed", "COMPLETE", "SUCCESS"],
+      "action": "AUTO_VERIFY",
+      "message": "Running verification before declaring success..."
+    }
+  },
+  "verification_gates": {
+    "ask_first_protocol": {
+      "enabled": true,
+      "categories": [
+        "legal_changes",
+        "bulk_operations",
+        "destructive_operations",
+        "scope_changes",
+        "security_sensitive"
+      ],
+      "default_action": "ASK_USER"
+    },
+    "ownership_verification": {
+      "enabled": true,
+      "description": "Verify code ownership before attribution changes",
+      "trigger": "copyright_header_modification",
+      "question": "Is this your code or library code?"
+    },
+    "output_verification": {
+      "enabled": true,
+      "requirements": {
+        "claims_require_proof": true,
+        "show_verification_commands": true,
+        "before_after_comparisons": true,
+        "actual_counts_not_assertions": true
+      }
+    }
+  },
+  "behavioral_boundaries": {
+    "user_domain": [
+      "legal_decisions",
+      "ip_attribution",
+      "security_policies",
+      "business_requirements",
+      "architecture_decisions"
+    ],
+    "ai_domain": [
+      "code_formatting",
+      "build_optimization",
+      "bug_fixes",
+      "documentation",
+      "test_coverage"
+    ],
+    "shared_domain": [
+      "refactoring_approaches",
+      "performance_tuning",
+      "dependency_updates",
+      "api_changes"
+    ],
+    "enforcement": "propose_and_approve_for_shared"
+  },
+  "interaction_patterns": {
+    "old_pattern": "observe → infer → act → user_corrects",
+    "new_pattern": "observe → question → user_clarifies → act",
+    "golden_rules": [
+      "ASK_FIRST: When uncertain about ownership, licensing, IP rights",
+      "SHOW_DONT_TELL: Never claim success without showing proof",
+      "STAY_IN_LANE: Legal/IP decisions are ALWAYS user domain"
+    ]
+  },
+  "success_metrics": {
+    "target_goals": {
+      "critical_violations": 0,
+      "high_violations_per_month": 1,
+      "ask_first_compliance": 0.9,
+      "verification_before_claims": 1.0
+    },
+    "monitoring": {
+      "violation_counter_per_session": true,
+      "ask_first_rate_tracking": true,
+      "verification_compliance_log": true,
+      "user_correction_frequency": true
+    }
+  },
+  "logging": {
+    "verbose": false,
+    "explain_failures": true,
+    "log_violations": true,
+    "log_ask_first_events": true,
+    "log_batch_operations": true,
+    "log_scope_changes": true
+  },
+  "response_handling": {
+    "auto_reject_on_violation": true,
+    "return_patch_feedback": true,
+    "fallback_to_diff_hint": true
+  },
+  "scope": {
+    "context_protected": true,
+    "delta_required": true,
+    "ignore_unjustified_mutations": true
+  },
+  "default_assumptions": {
+    "user_code_is_stable": true,
+    "modifications_must_be_minimal": true
+  },
+  "meta": {
+    "name": "llmcjf-hardmode-ruleset",
+    "version": "2.0.0",
+    "description": "Enforces strict anti-jockey behavior in GPT coding environments. Filters responses based on delta-only patching and context integrity. Extended with governance controls from AI_CONTROL_SURFACE_ANALYSIS_2026-02-02.md",
+    "last_updated": "2026-02-02",
+    "violation_prevention": {
+      "copyright_tampering_protection": true,
+      "batch_operation_safety": true,
+      "success_claim_verification": true,
+      "scope_discipline": true
+    }
+  }
+}    },
+    "H012": {
+        "id": "H012",
+        "name": "USER-TEMPLATE-LITERAL",
+        "category": "pattern_recognition",
+        "severity": "HIGH",
+        "description": "When user provides code template, follow it literally without documentation",
+        "triggers": [
+            "User includes code block in request",
+            "User says 'given:' followed by example",
+            "User provides time estimate"
+        ],
+        "action": "Follow template exactly, make requested change, NO documentation",
+        "time_gate": "Agent execution time must not exceed 2x user's stated estimate",
+        "prevention": [
+            "NO comparison guides",
+            "NO comprehensive documentation",
+            "NO scope expansion",
+            "Match or beat user time estimate"
+        ],
+        "related_violations": ["V008"],
+        "examples": {
+            "bad": "User shows 5-line template, agent creates 400-line guide",
+            "good": "User shows 5-line template, agent returns 5 modified lines"
+        }
+    },
+    "H013": {
+        "id": "H013",
+        "name": "PACKAGE-VERIFICATION",
+        "category": "deliverable_quality",
+        "severity": "CRITICAL",
+        "description": "MANDATORY verification before claiming success on any deliverable or cleanup operation",
+        "scope": [
+            "package creation",
+            "binary builds",
+            "file removal/cleanup",
+            "corpus operations",
+            "any claim of 'complete' or 'success'"
+        ],
+        "triggers": [
+            "Creating distribution package",
+            "Claiming build complete",
+            "Claiming cleanup complete",
+            "Claiming removal complete",
+            "Any [OK] success declaration"
+        ],
+        "protocol": {
+            "1_perform": "Execute operation (build, package, remove, etc)",
+            "2_verify": "Test/count/check actual result",
+            "3_compare": "Expected == actual?",
+            "4_claim": "ONLY if verified → claim success",
+            "5_evidence": "Include verification evidence in report"
+        },
+        "verification_methods": {
+            "cleanup": "find . -name 'pattern' | wc -l → Expected: 0",
+            "build": "ls binary && ./binary --version",
+            "package": "tar -tzf package.tar.gz | wc -l → Expected: N",
+            "corpus": "ls corpus/ | wc -l → Expected: 5"
+        },
+        "action": "VERIFY_BEFORE_CLAIM",
+        "time_cost": "5 seconds verification vs 10 minutes correction",
+        "waste_ratio": "120×",
+        "related_violations": [
+            "V003: Unverified copy",
+            "V010: Incomplete build",
+            "V012: Untested binary",
+            "V024: Backup removal"
+        ],
+        "enforcement": "MANDATORY_VERIFICATION_STEP"
+    },
+    "H015": {
+        "id": "H015",
+        "name": "CLEANUP-VERIFICATION-MANDATORY",
+        "category": "cleanup_quality",
+        "severity": "CRITICAL",
+        "description": "ALL cleanup/removal operations MUST be verified with quantitative check before claiming success",
+        "triggers": [
+            "rm -rf",
+            "Claiming 'Removed N files'",
+            "Claiming 'cleanup complete'",
+            "Claiming 'deleted all X'",
+            "Any file/directory removal operation"
+        ],
+        "protocol": {
+            "1_remove": "Execute removal command",
+            "2_count": "Count remaining: find . -name 'pattern' | wc -l",
+            "3_verify": "Expected count: 0",
+            "4_claim": "ONLY if count == 0 → claim success",
+            "5_evidence": "Show verification output in report"
+        },
+        "template": "rm -rf *.backup*; REMAIN=$(find . -name '*.backup*' | wc -l); [ $REMAIN -eq 0 ] && echo 'verified'",
+        "red_flags": [
+            "Removed N files [OK]",
+            "Cleanup complete [OK]",
+            "Deleted all backups [OK]",
+            "WITHOUT showing find/ls verification"
+        ],
+        "action": "COUNT_THEN_CLAIM",
+        "time_cost": "2 seconds count vs 10 minutes correction",
+        "waste_ratio": "300×",
+        "false_success_pattern_violations": 15,
+        "first_violation": "V003",
+        "latest_violation": "V024",
+        "pattern_rate": "65% of all violations",
+        "enforcement": "PRE_CLAIM_QUANTITATIVE_CHECK"
+    },
+    "H020": {
+        "id": "H020",
+        "name": "TRUST_AUTHORITATIVE_SOURCES",
+        "category": "information_verification",
+        "severity": "HIGH",
+        "description": "Verify claims against authoritative sources before making statements about capabilities or limitations",
+        "type": "positive_pattern",
+        "trigger": "Before stating 'X doesn't support Y' or 'Z is not available'",
+        "authoritative_source_hierarchy": [
+            "1. GitHub Actions workflows (.github/workflows/*.yml) - CI/CD is executable truth",
+            "2. Build system config (CMakeLists.txt, Makefile, build scripts)",
+            "3. Official documentation (README, project docs, library docs)",
+            "4. Source code (actual implementation)",
+            "5. Assumptions (lowest priority - always verify)"
+        ],
+        "required_actions": [
+            "git ls-files | grep -E '\\.(yml|yaml)$' | xargs grep -i 'topic'",
+            "grep -r 'CMAKE_.*' CMakeLists.txt",
+            "cat .github/workflows/*.yml",
+            "Search docs before claiming limitations"
+        ],
+        "correction_cycle_protocol": {
+            "when_user_corrects": [
+                "1. Acknowledge authoritative source provided",
+                "2. Verify against that source directly",
+                "3. Test implementation to confirm",
+                "4. Document findings for future",
+                "5. Update governance if pattern worth capturing"
+            ],
+            "healthy_pattern": "User corrects → verify source → test → document → learn",
+            "unhealthy_pattern": "User corrects → defensive → assume they're wrong → violate"
+        },
+        "case_study": {
+            "scenario": "WASM ASAN support claim",
+            "initial_claim": "WASM ASAN not supported by Emscripten",
+            "user_correction": "GitHub Actions workflow shows -fsanitize=address in WASM matrix",
+            "verification_result": "[OK] WASM ASAN fully supported, 14 tools built successfully",
+            "lesson": "Trust CI workflows over assumptions"
+        },
+        "red_flags": [
+            "WASM doesn't support...",
+            "Emscripten can't handle...",
+            "This platform doesn't have...",
+            "I don't think X works with Y..."
+        ],
+        "action": "CHECK_AUTHORITATIVE_SOURCES_FIRST",
+        "roi_minutes": 30,
+        "benefits": [
+            "Accuracy - claims backed by evidence",
+            "Efficiency - avoid correction cycles",
+            "Trust - user confidence in responses",
+            "Learning - build accurate project knowledge"
+        ],
+        "first_identified": "2026-02-03",
+        "session": "e99391ed-f8ae-48c9-97f6-5fef20e65096"
+    }

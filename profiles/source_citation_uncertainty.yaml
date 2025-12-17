@@ -1,0 +1,784 @@
+# LLMCJF Factual Claims & Source Citation Framework
+# Security research focus with source attribution requirements
+# Created: 2026-02-06 22:06 UTC
+# Extends: claim_verification.yaml v1.0, evidence_based_validation.yaml v1.0
+
+version: 1.0
+description: >
+  Source citation requirements for factual claims in security research.
+  Prevents speculation presented as fact. Requires attribution for all
+  technical assertions. Integrates with evidence-based validation.
+
+# ============================================================================
+# FACTUAL CLAIMS SYSTEM
+# ============================================================================
+factual_claims:
+  
+  require_source_citation: true
+  
+  description: >
+    ALL factual claims MUST cite a source. Prevents speculation from being
+    presented as established fact. Critical for security research where
+    incorrect assumptions lead to false vulnerability reports.
+  
+  accepted_sources:
+    
+    code_reference:
+      format: "file.cpp:line"
+      examples:
+        - "IccTagXml.cpp:3302"
+        - "IccUtil.h:145-150"
+        - "IccProfLib/IccProfile.cpp:892"
+      validation: "File must exist, line number must be valid"
+      use_case: "Claiming code behavior, function existence, logic flow"
+      
+    tool_output:
+      format: "Command and output"
+      examples:
+        - "grep -r 'function' . → 12 matches"
+        - "./fuzzer crash.bin 2>&1 → heap-buffer-overflow"
+        - "git log --oneline → commit abc123"
+      validation: "Command must be executable, output must be shown"
+      use_case: "Claiming counts, tool behavior, verification results"
+      
+    documentation_url:
+      format: "URL or file path to documentation"
+      examples:
+        - "docs/API.md#IccProfile"
+        - "README.md:45-60"
+        - "Build/Cmake/README.txt"
+      validation: "Document must exist and be accessible"
+      use_case: "Claiming documented behavior, requirements, specifications"
+      
+    user_verified_statement:
+      format: "User said: '[quote]'"
+      examples:
+        - "User confirmed: 'Dictionary had 295 entries'"
+        - "User reported: 'Fuzzer crashes at line 3302'"
+        - "User stated: 'DO NOT PUSH without authorization'"
+      validation: "Must be direct quote from user message"
+      use_case: "Claiming user requirements, constraints, observations"
+      
+    prior_verification:
+      format: "Turn N: [claim] (verified via [method])"
+      examples:
+        - "Turn 1: 325 entries (grep -c '^\"' afl.dict → 325)"
+        - "Turn 3: Crash reproducible (3/3 exits 139)"
+      validation: "Must reference specific turn with verification evidence"
+      use_case: "Referencing previously verified facts"
+      
+    asan_ubsan_output:
+      format: "Sanitizer report excerpt"
+      examples:
+        - "ASAN: heap-buffer-overflow at 0x7fff... (IccTagXml.cpp:3302)"
+        - "UBSAN: signed integer overflow (IccUtil.cpp:1044)"
+      validation: "Must show sanitizer name, error type, location"
+      use_case: "Claiming specific vulnerability types"
+      
+    exit_code_observation:
+      format: "Command; echo $? → [code]"
+      examples:
+        - "./IccRoundTrip crash.icc out.icc; echo $? → 139 (SEGV)"
+        - "./fuzzer -runs=1; echo $? → 1 (graceful exit)"
+      validation: "Must show command and numeric exit code"
+      use_case: "Distinguishing crashes (128+) from errors (1-127)"
+      
+  citation_templates:
+    
+    code_reference_template:
+      format: "According to [file:line], [claim]"
+      examples:
+        - "According to IccTagXml.cpp:3302, the buffer overflow occurs in icCurvesFromXml"
+        - "According to IccUtil.h:145-150, NaN validation checks for infinity"
+        
+    tool_output_template:
+      format: "Verified via [command]: [result]"
+      examples:
+        - "Verified via grep -c '^\"' afl.dict: 325 entries"
+        - "Verified via ./fuzzer crash.bin: heap-buffer-overflow at IccTagXml.cpp:3302"
+        
+    documentation_template:
+      format: "Per [document], [claim]"
+      examples:
+        - "Per docs/Fuzzing.md, dictionary entries must use hex format"
+        - "Per GOVERNANCE_DASHBOARD.md, trust score is 0/100"
+        
+    user_statement_template:
+      format: "User stated: '[quote]' → [interpretation]"
+      examples:
+        - "User stated: 'Dictionary had 295 entries' → Expected count was 295"
+        - "User stated: 'DO NOT PUSH' → All commits must be local only"
+        
+    prior_turn_template:
+      format: "Previously verified (Turn N): [claim]"
+      examples:
+        - "Previously verified (Turn 1): 325 dictionary entries"
+        - "Previously verified (Turn 3): Crash reproducible 3/3 times"
+        
+  uncitable_claims:
+    description: "Claims that CANNOT be cited and MUST use uncertainty markers"
+    
+    examples:
+      - "The crash is probably exploitable"  # Needs [SPECULATIVE]
+      - "This might be a heap overflow"      # Needs [UNCERTAIN]
+      - "Coverage should increase"           # Needs [NEEDS VERIFICATION]
+      - "All fuzzers likely built"           # Needs verification, not citation
+      
+    enforcement:
+      if_no_source_available: "Use uncertainty marker instead of citation"
+      if_speculating: "Mark as [SPECULATIVE]"
+      if_inferring: "Mark as [UNCERTAIN]"
+      if_unverified: "Mark as [NEEDS VERIFICATION]"
+
+
+# ============================================================================
+# SOURCE CITATION VALIDATION
+# ============================================================================
+citation_validation:
+  
+  code_reference_validation:
+    description: "Validate code references before citing"
+    
+    checks:
+      file_exists:
+        command: "[ -f ${FILE} ] || echo 'File not found'"
+        examples:
+          - "[ -f IccProfLib/IccTagXml.cpp ] || echo 'File not found'"
+          
+      line_in_range:
+        command: "wc -l < ${FILE}"
+        validation: "Cited line number ≤ total lines"
+        examples:
+          - "Citing line 3302, file has 3500 lines → VALID"
+          - "Citing line 5000, file has 3500 lines → INVALID"
+          
+      line_contains_expected:
+        command: "sed -n '${LINE}p' ${FILE}"
+        validation: "Line should relate to claim"
+        examples:
+          - "Claim: 'Buffer overflow' → Line should contain buffer operations"
+          
+    anti_patterns:
+      - "Citing non-existent file"
+      - "Citing line number beyond file length"
+      - "Citing line unrelated to claim"
+      - "Citing without verifying file contents"
+      
+  tool_output_validation:
+    description: "Validate tool output citations"
+    
+    checks:
+      command_executable:
+        validation: "Command must exist and be executable"
+        examples:
+          - "which grep >/dev/null || echo 'Command not found'"
+          
+      output_matches_claim:
+        validation: "Output must support claim"
+        examples:
+          - "Claim: '325 entries' → Output must show '325'"
+          - "Claim: 'heap-buffer-overflow' → Output must contain exact string"
+          
+      exit_code_recorded:
+        validation: "For crash claims, must record exit code"
+        examples:
+          - "./tool crash.bin; echo $? → 139 (SEGV)"
+          - "./tool crash.bin; echo $? → 1 (error, not crash)"
+          
+    anti_patterns:
+      - "Citing command without showing output"
+      - "Claiming tool said X, output shows Y"
+      - "Cherry-picking output, hiding contradictory data"
+      
+  documentation_validation:
+    description: "Validate documentation citations"
+    
+    checks:
+      document_exists:
+        command: "[ -f ${DOC} ] || echo 'Document not found'"
+        
+      section_exists:
+        validation: "If citing section/line, must exist"
+        examples:
+          - "Citing README.md:45-60 → File must have ≥60 lines"
+          
+      content_supports_claim:
+        validation: "Document content must support claim"
+        examples:
+          - "Claim: 'Dictionary format is hex' → Doc must state this"
+          
+    anti_patterns:
+      - "Citing non-existent documentation"
+      - "Misrepresenting documentation content"
+      - "Citing outdated documentation"
+
+
+# ============================================================================
+# UNCERTAINTY MARKERS SYSTEM
+# ============================================================================
+uncertainty_markers:
+  
+  required_when:
+    
+    speculating_about_behavior:
+      description: "When inferring behavior without direct observation"
+      trigger_words:
+        - "probably"
+        - "likely"
+        - "might"
+        - "could be"
+        - "appears to be"
+        - "seems to"
+      marker: "[SPECULATIVE]"
+      examples:
+        - "[SPECULATIVE] The crash might be exploitable (no RCE primitive verified)"
+        - "[SPECULATIVE] This appears to be a use-after-free (ASAN report unclear)"
+        
+    inferring_from_partial_data:
+      description: "When extrapolating from incomplete information"
+      trigger_words:
+        - "based on"
+        - "suggests"
+        - "indicates"
+        - "implies"
+      marker: "[UNCERTAIN]"
+      examples:
+        - "[UNCERTAIN] Coverage suggests >80% (no full report generated)"
+        - "[UNCERTAIN] Build indicates success (no execution test performed)"
+        
+    making_recommendations_without_testing:
+      description: "When suggesting solutions without verification"
+      trigger_words:
+        - "should"
+        - "would"
+        - "could"
+        - "recommend"
+        - "suggest"
+      marker: "[NEEDS VERIFICATION]"
+      examples:
+        - "[NEEDS VERIFICATION] Adding -fsanitize=address should catch this"
+        - "[NEEDS VERIFICATION] Increasing timeout would prevent false positives"
+        
+    estimating_counts:
+      description: "When approximating instead of counting exactly"
+      trigger_words:
+        - "approximately"
+        - "about"
+        - "roughly"
+        - "~"
+      marker: "[ESTIMATE]"
+      examples:
+        - "[ESTIMATE] Approximately 300 dictionary entries (not counted exactly)"
+        - "[ESTIMATE] ~50 crashes (rough count, not verified)"
+        
+    temporal_speculation:
+      description: "When predicting future state or behavior"
+      trigger_words:
+        - "will"
+        - "going to"
+        - "next"
+        - "should now"
+      marker: "[PREDICTION]"
+      examples:
+        - "[PREDICTION] This will crash on next execution (not tested)"
+        - "[PREDICTION] Coverage should now be 85% (not measured)"
+        
+  marker_format:
+    
+    placement:
+      start_of_sentence: "Preferred"
+      start_of_claim: "Also acceptable"
+      examples:
+        - "[SPECULATIVE] The crash might be exploitable."
+        - "The crash [SPECULATIVE] might be exploitable."
+        
+    multiple_markers:
+      allowed: true
+      examples:
+        - "[SPECULATIVE] [NEEDS VERIFICATION] Adding ASAN might catch this issue"
+        
+  marker_definitions:
+    
+    SPECULATIVE:
+      confidence: 30-60%
+      meaning: "Hypothesis based on limited evidence"
+      requires: "State assumptions explicitly"
+      upgrade_to_verified: "Test hypothesis, gather evidence"
+      
+    UNCERTAIN:
+      confidence: 40-70%
+      meaning: "Partial evidence, incomplete picture"
+      requires: "State what's known vs unknown"
+      upgrade_to_verified: "Gather missing data"
+      
+    NEEDS_VERIFICATION:
+      confidence: 0-50%
+      meaning: "Untested assumption or recommendation"
+      requires: "State verification method needed"
+      upgrade_to_verified: "Execute verification, show results"
+      
+    ESTIMATE:
+      confidence: 50-80%
+      meaning: "Approximation, not exact count"
+      requires: "State margin of error if known"
+      upgrade_to_verified: "Count exactly with tool"
+      
+    PREDICTION:
+      confidence: 20-60%
+      meaning: "Future state speculation"
+      requires: "State conditions for prediction"
+      upgrade_to_verified: "Execute action, observe result"
+      
+  enforcement:
+    
+    scan_for_trigger_words:
+      action: "Before response, scan for speculation trigger words"
+      if_found_without_marker: "Add appropriate uncertainty marker"
+      
+    prohibit_confident_language_with_marker:
+      invalid: "[SPECULATIVE] Successfully built all fuzzers"
+      reason: "Cannot be both speculative and successful"
+      correction: "[NEEDS VERIFICATION] Build may have succeeded (not tested)"
+      
+    require_explicit_assumptions:
+      format: "[MARKER] [claim]. Assumption: [assumption]"
+      examples:
+        - "[SPECULATIVE] Crash is exploitable. Assumption: Write primitive exists"
+        - "[UNCERTAIN] Coverage >80%. Assumption: All functions instrumented"
+
+
+# ============================================================================
+# SESSION STATE & CONTRADICTION DETECTION
+# ============================================================================
+session_state:
+  
+  track_assertions: true
+  detect_contradictions: true
+  
+  description: >
+    Track all factual claims across turns to detect contradictions.
+    Critical for security research where contradictory claims indicate
+    false assumptions or unverified speculation.
+  
+  tracked_entities:
+    
+    numeric_values:
+      fuzzer_count:
+        turns: []
+        current_value: null
+        changes: []
+        
+      dictionary_size:
+        turns: []
+        current_value: null
+        changes: []
+        
+      crash_count:
+        turns: []
+        current_value: null
+        changes: []
+        
+      coverage_percent:
+        turns: []
+        current_value: null
+        changes: []
+        
+    state_assertions:
+      file_exists:
+        turns: []
+        current_state: null
+        changes: []
+        
+      build_status:
+        turns: []
+        current_state: null
+        changes: []
+        
+      crash_reproducibility:
+        turns: []
+        current_state: null
+        changes: []
+        
+    security_claims:
+      vulnerability_type:
+        turns: []
+        current_claim: null
+        changes: []
+        
+      exploitability:
+        turns: []
+        current_claim: null
+        changes: []
+        
+      severity:
+        turns: []
+        current_claim: null
+        changes: []
+        
+  contradiction_detection:
+    
+    numeric_contradiction:
+      description: "Same entity has different values in different turns"
+      
+      example_contradiction:
+        turn_1: "Dictionary has 295 entries"
+        turn_3: "Dictionary has 30 entries"
+        no_change_documented: true
+        contradiction: "295 vs 30 without explanation"
+        
+      detection_rule: "If value changes without documented operation, flag contradiction"
+      
+      operations_that_change_values:
+        - "Added N entries"
+        - "Removed N files"
+        - "Built N more fuzzers"
+        - "Deleted backups"
+        
+    state_contradiction:
+      description: "State changes without documented action"
+      
+      example_contradiction:
+        turn_1: "File crash.bin exists"
+        turn_4: "File crash.bin not found"
+        no_deletion_documented: true
+        contradiction: "File disappeared without deletion"
+        
+      detection_rule: "If state changes without action, flag contradiction"
+      
+    claim_contradiction:
+      description: "Contradictory claims about same entity"
+      
+      example_contradiction:
+        turn_1: "Crash is heap-buffer-overflow"
+        turn_5: "Crash is stack-overflow"
+        same_crash_file: true
+        contradiction: "Vulnerability type changed"
+        
+      detection_rule: "If claim about same entity differs, flag contradiction"
+      
+    temporal_contradiction:
+      description: "Time-ordered events in wrong sequence"
+      
+      example_contradiction:
+        turn_1: "Build complete"
+        turn_3: "Starting build"
+        contradiction: "Build cannot start after completion"
+        
+      detection_rule: "If events violate temporal logic, flag contradiction"
+      
+  on_contradiction:
+    
+    1_halt_response:
+      action: "STOP response generation immediately"
+      reason: "Contradiction indicates false assumption or missing data"
+      
+    2_show_conflicting_statements:
+      format: |
+        [WARN]  CONTRADICTION DETECTED
+        
+        Turn ${TURN1}: "${CLAIM1}"
+        Turn ${TURN2}: "${CLAIM2}"
+        
+        Conflict: ${DESCRIPTION}
+        
+      example: |
+        [WARN]  CONTRADICTION DETECTED
+        
+        Turn 1: "Dictionary has 295 entries"
+        Turn 3: "Dictionary has 30 entries"
+        
+        Conflict: Numeric value changed from 295 to 30 without documented operation
+        
+    3_show_possible_resolutions:
+      format: |
+        Possible resolutions:
+        A) Turn ${TURN1} was incorrect (${REASON1})
+        B) Turn ${TURN2} was incorrect (${REASON2})
+        C) Change occurred between turns (${OPERATION})
+        
+      example: |
+        Possible resolutions:
+        A) Turn 1 was incorrect (claimed 295 without verification)
+        B) Turn 3 was incorrect (miscounted entries)
+        C) Dictionary was modified (user edited file)
+        
+    4_ask_user_to_clarify:
+      format: "Which resolution is correct? Or provide clarification."
+      use_tool: "ask_user"
+      await_response: true
+      
+    5_update_session_state:
+      action: "After clarification, update tracked values"
+      record_correction: true
+      
+  contradiction_prevention:
+    
+    before_making_claim:
+      1: "Check session state for prior claims about same entity"
+      2: "If prior claim exists, verify consistency"
+      3: "If inconsistent, either:"
+        a: "Verify current state (may discover prior claim was wrong)"
+        b: "Document change operation (addition, removal, modification)"
+        c: "Flag potential contradiction, ask user"
+        
+    when_discovering_error:
+      format: "Correction: Turn N claimed X, actually Y. Evidence: [verification]"
+      examples:
+        - "Correction: Turn 1 claimed 295 entries, actually 30. Evidence: grep -c → 30"
+        
+    when_state_changes:
+      format: "State changed: [entity] was [old], now [new] due to [operation]"
+      examples:
+        - "State changed: Dictionary was 295 entries, now 325 due to adding 30 entries"
+
+
+# ============================================================================
+# INTEGRATION & AUTOMATION
+# ============================================================================
+integration:
+  
+  extends_files:
+    - "claim_verification.yaml v1.0"
+    - "evidence_based_validation.yaml v1.0"
+    - "governance_rules.yaml v3.1"
+    
+  adds_requirements:
+    to_claim_verification: "Source citation for all factual claims"
+    to_evidence_validation: "Uncertainty markers when evidence incomplete"
+    to_governance_rules: "Contradiction detection and resolution protocol"
+    
+  automation_hooks:
+    
+    llmcjf_cite_source:
+      usage: "llmcjf_cite_source [type] [reference]"
+      purpose: "Validate source citation before using"
+      
+      implementation: |
+        llmcjf_cite_source() {
+          local type="$1"
+          local ref="$2"
+          
+          case "$type" in
+            code)
+              local file=$(echo "$ref" | cut -d: -f1)
+              local line=$(echo "$ref" | cut -d: -f2)
+              
+              if [ ! -f "$file" ]; then
+                echo "[FAIL] File not found: $file"
+                return 1
+              fi
+              
+              local total_lines=$(wc -l < "$file")
+              if [ "$line" -gt "$total_lines" ]; then
+                echo "[FAIL] Line $line exceeds file length ($total_lines)"
+                return 1
+              fi
+              
+              echo "[OK] Valid code reference: $ref"
+              echo "Line content:"
+              sed -n "${line}p" "$file"
+              ;;
+              
+            tool)
+              local cmd="$ref"
+              echo "Executing: $cmd"
+              eval "$cmd"
+              local exit_code=$?
+              echo "Exit code: $exit_code"
+              echo "[OK] Tool output cited"
+              ;;
+              
+            doc)
+              if [ ! -f "$ref" ]; then
+                echo "[FAIL] Document not found: $ref"
+                return 1
+              fi
+              echo "[OK] Valid documentation reference: $ref"
+              ;;
+              
+            *)
+              echo "[FAIL] Unknown citation type: $type"
+              echo "Supported: code, tool, doc"
+              return 1
+              ;;
+          esac
+        }
+        
+    llmcjf_check_uncertainty:
+      usage: "llmcjf_check_uncertainty 'claim text'"
+      purpose: "Suggest uncertainty marker if claim contains trigger words"
+      
+      implementation: |
+        llmcjf_check_uncertainty() {
+          local claim="$1"
+          
+          echo "🔍 UNCERTAINTY CHECK"
+          echo "Claim: $claim"
+          echo ""
+          
+          # Check for speculation triggers
+          if echo "$claim" | grep -qi '\(probably\|likely\|might\|could be\|appears\)'; then
+            echo "[WARN]  SPECULATION DETECTED"
+            echo "Suggestion: Add [SPECULATIVE] marker"
+            echo ""
+          fi
+          
+          # Check for inference triggers
+          if echo "$claim" | grep -qi '\(based on\|suggests\|indicates\|implies\)'; then
+            echo "[WARN]  INFERENCE DETECTED"
+            echo "Suggestion: Add [UNCERTAIN] marker"
+            echo ""
+          fi
+          
+          # Check for unverified recommendations
+          if echo "$claim" | grep -qi '\(should\|would\|recommend\|suggest\)'; then
+            echo "[WARN]  RECOMMENDATION DETECTED"
+            echo "Suggestion: Add [NEEDS VERIFICATION] marker"
+            echo ""
+          fi
+          
+          # Check for estimates
+          if echo "$claim" | grep -qi '\(approximately\|about\|roughly\|~\)'; then
+            echo "[WARN]  ESTIMATE DETECTED"
+            echo "Suggestion: Add [ESTIMATE] marker or count exactly"
+            echo ""
+          fi
+          
+          echo "[OK] Uncertainty check complete"
+        }
+        
+    llmcjf_track_claim:
+      usage: "llmcjf_track_claim 'entity' 'value' 'source'"
+      purpose: "Track claim in session state for contradiction detection"
+      storage: "/tmp/llmcjf-session-state.json"
+      
+      implementation: |
+        llmcjf_track_claim() {
+          local entity="$1"
+          local value="$2"
+          local source="$3"
+          local state_file="/tmp/llmcjf-session-state.json"
+          local turn=$(date +%s)
+          
+          # Initialize if doesn't exist
+          if [ ! -f "$state_file" ]; then
+            echo '{}' > "$state_file"
+          fi
+          
+          # Check for contradiction
+          local prev_value=$(jq -r ".\"$entity\".current_value // \"null\"" "$state_file" 2>/dev/null)
+          
+          if [ "$prev_value" != "null" ] && [ "$prev_value" != "$value" ]; then
+            echo ""
+            echo "[WARN]  CONTRADICTION DETECTED"
+            echo ""
+            echo "Entity: $entity"
+            echo "Previous value: $prev_value"
+            echo "New value: $value"
+            echo ""
+            echo "Possible resolutions:"
+            echo "  A) Previous value was incorrect (not verified)"
+            echo "  B) New value is incorrect (verification error)"
+            echo "  C) Value changed (operation occurred)"
+            echo ""
+            echo "HALTING: Clarification required"
+            return 1
+          fi
+          
+          # Track claim
+          echo "[NOTE] Tracking: $entity = $value (source: $source)"
+          
+          # Update state file (simplified - actual implementation would use jq)
+          echo "Entity '$entity' tracked in session state"
+        }
+
+
+# ============================================================================
+# RESPONSE TEMPLATES
+# ============================================================================
+response_templates:
+  
+  cited_factual_claim:
+    format: "[claim]. According to [source], [supporting_detail]."
+    examples:
+      - "Heap buffer overflow at line 3302. According to IccTagXml.cpp:3302, icCurvesFromXml allocates insufficient buffer space."
+      - "Dictionary has 325 entries. Verified via grep -c '^\"' afl.dict: 325."
+      
+  uncertain_claim:
+    format: "[MARKER] [claim]. [Assumption/limitation]."
+    examples:
+      - "[SPECULATIVE] Crash might be exploitable. Assumption: Write primitive not yet verified."
+      - "[UNCERTAIN] Coverage >80%. Limitation: Full coverage report not generated."
+      
+  corrected_claim:
+    format: "Correction: Turn [N] claimed [old], actually [new]. Evidence: [verification]."
+    examples:
+      - "Correction: Turn 1 claimed 295 entries, actually 30. Evidence: grep -c → 30."
+
+
+# ============================================================================
+# ANTI-PATTERNS
+# ============================================================================
+anti_patterns:
+  
+  uncited_factual_claims:
+    violation: "Making factual claim without source"
+    examples:
+      - "[FAIL] The crash is a heap buffer overflow"
+      - "[OK] The crash is a heap buffer overflow (ASAN: heap-buffer-overflow at IccTagXml.cpp:3302)"
+      
+  speculation_without_marker:
+    violation: "Speculating without uncertainty marker"
+    examples:
+      - "[FAIL] This is probably exploitable"
+      - "[OK] [SPECULATIVE] This might be exploitable (no RCE primitive verified)"
+      
+  contradiction_without_resolution:
+    violation: "Contradicting prior claim without acknowledgment"
+    examples:
+      - "[FAIL] Turn 1: 'Dictionary has 295 entries' → Turn 3: 'Dictionary has 30 entries'"
+      - "[OK] Correction: Turn 1 claimed 295 entries, actually 30 (not verified)"
+      
+  confident_language_for_speculation:
+    violation: "Using confident language for uncertain claims"
+    examples:
+      - "[FAIL] Successfully increased coverage to 85%"
+      - "[OK] [NEEDS VERIFICATION] Coverage may be 85% (not measured)"
+
+
+# ============================================================================
+# METRICS
+# ============================================================================
+metrics:
+  
+  citation_compliance:
+    measurement: "Factual claims with sources / total factual claims"
+    target: "100%"
+    
+  uncertainty_marker_usage:
+    measurement: "Speculative claims with markers / total speculative claims"
+    target: "100%"
+    
+  contradiction_detection_rate:
+    measurement: "Contradictions detected before user / total contradictions"
+    target: ">90%"
+    
+  correction_acknowledgment_rate:
+    measurement: "Errors acknowledged explicitly / total errors"
+    target: "100%"
+
+
+# ============================================================================
+# VERSION HISTORY
+# ============================================================================
+changelog:
+  v1.0:
+    date: "2026-02-06 22:06 UTC"
+    changes:
+      - "Initial release"
+      - "7 accepted source types for citations"
+      - "5 uncertainty markers with definitions"
+      - "Session state tracking for contradiction detection"
+      - "3 automation functions (cite_source, check_uncertainty, track_claim)"
+      - "Integration with claim_verification.yaml and evidence_based_validation.yaml"
+    focus: "Security research with source attribution and speculation control"

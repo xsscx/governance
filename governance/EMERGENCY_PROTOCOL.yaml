@@ -1,0 +1,141 @@
+# LLMCJF Emergency Protocol
+# Activated after violation #011 (meta-violation recursive failure)
+
+emergency_rules:
+  activation_trigger: "meta_violation OR recursive_failure OR token_waste > 50000"
+  
+  immediate_actions:
+    - STOP all documentation generation
+    - DELETE false narrative files
+    - FIX actual technical issues only
+    - TEST until all tests PASS
+    - COMMIT with minimal messages only
+    
+  test_failure_protocol:
+    on_any_test_failure:
+      action: HALT_ALL_WORK
+      no_commits: true
+      no_documentation: true
+      required_action: "Fix issue and re-test"
+      
+    on_test_pass:
+      allowed_actions:
+        - commit_fix
+        - minimal_documentation (max 500 words)
+        - proceed_to_next_task
+        
+  documentation_restrictions:
+    max_file_size: 2048  # bytes
+    max_files_per_issue: 1
+    prohibited_content:
+      - narratives
+      - essays
+      - speculation
+      - "lessons learned"
+      - "what should have happened"
+      - meta_documentation
+      
+    required_content:
+      - problem_statement (1 sentence)
+      - fix_description (1 sentence)
+      - test_evidence (actual output)
+      
+  token_budget_enforcement:
+    hard_limits:
+      documentation_tokens: 1000
+      narrative_tokens: 0
+      speculation_tokens: 0
+      
+    required_ratio:
+      test_output: 1.0  # 1:1 test:docs minimum
+      
+    violation_response:
+      immediate: STOP_SESSION
+      log_to: "llmcjf/EMERGENCY_VIOLATIONS.log"
+      
+  commit_message_rules:
+    max_length: 500  # characters
+    required_format: "Fix: <issue>. Test: <evidence>. Done."
+    prohibited_words:
+      - "comprehensive"
+      - "complete"
+      - "verified"  # unless actual test output included
+      - "thorough"
+      - "extensive"
+      
+  verification_requirements:
+    bundle_creation:
+      - extract_to_temp: mandatory
+      - count_files: mandatory
+      - http_test_all_types: mandatory
+      - size_verification: mandatory
+      - ignore_failures: FORBIDDEN
+      
+    code_changes:
+      - test_immediately: mandatory
+      - grep_claims: mandatory
+      - no_assumptions: mandatory
+      
+  violation_escalation:
+    violation_11: meta_violation
+    violation_12: session_termination
+    
+    escalation_path:
+      first_meta_violation: WARNING
+      second_meta_violation: HALT_SESSION
+      third_meta_violation: PERMANENT_RECORD
+      
+  resource_limits:
+    max_tokens_per_turn: 5000
+    max_commits_without_user_verification: 3
+    max_documentation_files: 5
+    
+  forbidden_patterns:
+    - "creating documentation while issue unfixed"
+    - "committing after test failure"
+    - "claiming verification without evidence"
+    - "extensive narrative generation"
+    - "meta_work (documentation about documentation)"
+    
+recovery_protocol:
+  when_activated:
+    1. DELETE all narrative documentation files
+    2. REVERT to last known working state
+    3. FIX actual issue with minimal changes
+    4. TEST until PASS (not FAIL)
+    5. COMMIT with evidence only
+    
+  documentation_cleanup:
+    delete_if_match:
+      - "*_LESSONS_*.md"
+      - "*_WHAT_SHOULD_*.md"
+      - "*_STATUS_*.md" (if > 2KB)
+      - "*_COMPLETE_*.md" (false claims)
+      
+  commit_cleanup:
+    amend_if:
+      - message contains "verified" without test output
+      - message contains "complete" without evidence
+      - commit adds >5 documentation files
+      
+enforcement:
+  automatic: true
+  override: false  # User can override, agent cannot
+  logging: mandatory
+  
+  on_violation:
+    action: STOP_IMMEDIATELY
+    notify_user: true
+    create_incident_report: true (max 1KB)
+    
+metrics:
+  track:
+    - tokens_per_documentation_file
+    - test_to_doc_ratio
+    - commits_per_actual_fix
+    - false_verification_claims
+    
+  alert_thresholds:
+    doc_tokens_per_issue: 5000
+    commits_without_tests: 2
+    narrative_ratio: 0.1  # 10% narrative is too much

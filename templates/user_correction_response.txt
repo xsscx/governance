@@ -1,0 +1,6 @@
+Acknowledged: [user's observation]
+Re-verifying:
+$ [verification command]
+[actual output]
+Confirmed: [match user's observation or explain discrepancy]
+Investigating: [next step]

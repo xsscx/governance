@@ -1,0 +1,185 @@
+
+# LLM Content Jockey Failure (CJF) Heuristics - Surveillance Integration
+
+cjf_heuristics:
+  - id: CJF-07
+    name: "No-op Echo Response"
+    description: >
+      The LLM re-emits user input with no transformation, substitution, or validation despite being prompted
+      for review or conditional modification. Suggests no execution of logical path analysis.
+    detection:
+      pattern: "re-emits prompt block verbatim"
+      context: "follow-up prompt requires review or conditional change"
+    mitigation: "Flag and require additional prompt; restrict emission scope."
+
+  - id: CJF-08
+    name: "Known-Good Structure Regression"
+    description: >
+      The LLM injects malformed substitutions into validated YAML, Makefile, or shell syntax,
+      breaking indentation, heredoc boundaries, or reserved syntax while attempting best-practice instrumentation.
+    detection:
+      pattern: "modifies indentation or formatting of a known-good config block"
+      context: "substitution or refactor prompt on CI, Makefile, or YAML"
+    mitigation: "Disable freeform generation for structured file types; require schema-validated patch."
+
+  - id: CJF-09
+    name: "Format Specification Ignorance"
+    description: >
+      The LLM generates data files (dictionaries, configs, structured text) using syntax from
+      similar but incompatible formats. Example: Adding inline comments after entries in libFuzzer
+      dictionaries (AFL format) when libFuzzer requires comments on separate lines.
+    detection:
+      pattern: "inline comments or format mixing in strict-format data files"
+      context: "fuzzer dictionaries (.dict), structured configs, format-sensitive files"
+    mitigation: "Verify format specifications before generation; test parser acceptance; provide format examples."
+    fingerprint:
+      signature: "ParseDictionaryFile: error in line"
+      example: '"token"  # comment  <- WRONG for libFuzzer'
+      correct: '# comment\n"token"  <- CORRECT'
+    reference: "2026-01-27 dictionary format violation"
+
+  - id: CJF-10
+    name: "Unsolicited Documentation Generation"
+    description: >
+      The LLM creates extensive documentation (markdown files, guides, test scripts) when user
+      requested technical testing only. Creates summary loops repeating same information in
+      multiple formats. Wastes compute resources on documentation nobody requested.
+    detection:
+      pattern: "creating .md files when user said 'test this'"
+      context: "crash reproduction, testing, validation tasks"
+      indicators:
+        - "Multiple summary boxes for same information"
+        - "Creating test scripts when project tools exist"
+        - "Comprehensive guides unprompted"
+        - "Repeating results in 3+ different formats"
+    mitigation: "Test first, report concisely. Document ONLY if explicitly requested. One document maximum."
+    fingerprint:
+      signature: "Creating >1 file when user asked to test"
+      violation_pattern: "User: 'test crash-X' → LLM: creates 3 markdown files + 2 test scripts + 5 summaries"
+      correct_pattern: "User: 'test crash-X' → LLM: runs test, reports pass/fail (1-3 lines)"
+    governance: ".copilot-sessions/governance/DOCUMENTATION_WASTE_PREVENTION.md"
+    reference: "2026-01-30 documentation waste prevention"
+
+  - id: CJF-11
+    name: "Custom Test Program Instead of Project Tooling"
+    description: >
+      The LLM creates custom C++ test programs, harnesses, or external tools to reproduce
+      crashes instead of using existing project command-line tools. Violates governance
+      requirement to use project tooling exclusively for crash reproduction.
+    detection:
+      pattern: "creating /tmp/*.cpp or custom test harnesses"
+      context: "crash reproduction, vulnerability testing"
+      indicators:
+        - "Writing custom C++ programs"
+        - "Creating reproduction harnesses"
+        - "Using external tools not in project"
+        - "Ignoring existing project tools in Build/Tools/"
+    mitigation: "Read CRASH_REPRODUCTION_GUIDE.md first. Use project tools only. If fuzzer crashes but tool doesn't, fuzzer lacks fidelity."
+    fingerprint:
+      signature: "Creating test program when project tool exists"
+      violation_pattern: "Creates /tmp/test_crash.cpp instead of using Build/Tools/IccRoundTrip/iccRoundTrip"
+      correct_pattern: "Test with Build/Tools/*, fuzzers-local/*, or Tools/CmdLine/* only"
+    governance: ".copilot-sessions/governance/CRASH_REPRODUCTION_GUIDE.md"
+    reference: "2026-01-30 custom test program violation"
+    severity: "medium"
+    
+  - id: CJF-12
+    name: "Fuzzer Fidelity Assumption Failure"
+    description: >
+      The LLM assumes fuzzer-discovered crashes are reproducible with project tools without
+      testing. When fuzzer crashes but project tool doesn't, LLM concludes bug exists instead
+      of identifying fuzzer fidelity issue. Fuzzer may bypass validation that production tools have.
+    detection:
+      pattern: "fuzzer crashes → immediately create reproduction guide without testing project tools"
+      context: "crash investigation, fuzzer findings"
+      indicators:
+        - "Creating documentation before testing with project tools"
+        - "Not comparing fuzzer vs tool behavior"
+        - "Ignoring tool validation failures (exit 255)"
+        - "Assuming fuzzer represents production behavior"
+    mitigation: "Test with project tools FIRST. If tool doesn't crash but fuzzer does → fuzzer fidelity issue, not production bug."
+    correct_workflow:
+      step1: "Test crash file with project tools (Build/Tools/*)"
+      step2: "If tool crashes → production bug, document"
+      step3: "If tool doesn't crash but fuzzer does → fuzzer fidelity issue, fix fuzzer"
+      step4: "Document ONLY if reproducible with project tooling"
+    reference: "2026-01-30 stack overflow fuzzer fidelity issue"
+    example: "icc_apply_fuzzer crashes, IccRoundTrip doesn't → fuzzer lacks validation fidelity"
+
+  - id: CJF-13
+    name: "Fuzzer Crash vs Tool Graceful Failure Confusion"
+    description: >
+      LLM documents fuzzer crashes (SEGV/DEADLYSIGNAL) as real bugs when project tool only
+      shows UB warnings with graceful exit codes (1-127). Fuzzer uses strict UBSan options
+      that abort on UB, while tools use permissive UBSan (warnings only). This creates
+      false crash reports when tool behavior is actually correct/safe.
+    detection:
+      pattern: "fuzzer shows DEADLYSIGNAL → document as SEGV without checking tool exit code"
+      context: "crash documentation, UBSan output analysis"
+      indicators:
+        - "Fuzzer output contains DEADLYSIGNAL or SEGV"
+        - "Tool output only contains UBSan warning"
+        - "Tool exit code is 1 (not 134/139 for ABRT/SEGV)"
+        - "Documenting 'SEGV crash' based on fuzzer alone"
+        - "Not distinguishing exit 1 from signal crashes"
+    key_distinction:
+      soft_failure:
+        exit_codes: "1-127"
+        meaning: "Tool detected issue, handled gracefully, exited with error"
+        tool_behavior: "UB warning logged, cleanup done, controlled exit"
+        document: "NO - this is working error handling"
+      hard_crash:
+        exit_codes: "128+ (128 + signal number)"
+        meaning: "Uncontrolled termination via signal"
+        examples: "Exit 134 (ABRT), Exit 139 (SEGV)"
+        document: "YES - if reproducible with tool"
+    mitigation: >
+      ALWAYS check tool exit code. Exit 1 with UB warning = graceful failure (good).
+      Exit 139 (SEGV) = hard crash (bad). Tool behavior is authoritative, not fuzzer.
+      Fuzzer strictness != production reality.
+    correct_workflow:
+      step1: "Run tool with crash input: ./tool input.icc output.icc"
+      step2: "Check exit code: echo $?"
+      step3: "If exit 1-127: soft failure, fuzzer too strict, DO NOT DOCUMENT"
+      step4: "If exit 128+: hard crash, verify signal, document if real"
+    fuzzer_vs_tool:
+      fuzzer_config: "May use -fsanitize-trap=undefined or halt_on_error=1"
+      tool_config: "Uses default UBSan (warnings, no trap)"
+      authority: "TOOL behavior is reality, FUZZER is test artifact"
+      when_they_differ: "Trust tool, classify as fuzzer fidelity issue"
+    reference: "2026-01-30 IccTagBasic.cpp:1866 false SEGV documentation"
+    example: >
+      Fuzzer: DEADLYSIGNAL at line 1866. Tool: UB warning + exit 1.
+      WRONG: Document as SEGV crash. RIGHT: Fuzzer fidelity issue, tool handles UB.
+    enforcement: "mandatory"
+    impact: "False severity claims, wasted documentation, incorrect fingerprints"
+    implementation_guide: "llmcjf/CJF13_IMPROVEMENTS.md"
+
+H012_USER_TEMPLATE_LITERAL:
+  name: "User Template Literal"
+  category: "Pattern Recognition"
+  severity: "HIGH"
+  description: "When user provides code template in request, follow it literally without documentation"
+  trigger: "User provides code example with 'given:' or time estimate"
+  signals:
+    - "User includes code block in request"
+    - "User says 'given:' followed by example"
+    - "User provides time estimate (e.g., '10 seconds')"
+    - "Pattern is obvious: swap X for Y"
+  action: |
+    1. Recognize template structure
+    2. Identify what to change (tool name, file, flag)
+    3. Make minimal change to template
+    4. Output result
+    5. STOP - NO documentation unless explicitly requested
+  prevention:
+    - "Do NOT create comparison guides"
+    - "Do NOT write 'comprehensive' anything"
+    - "Do NOT expand scope"
+    - "Match or beat user's time estimate"
+  time_check: "Agent time must not exceed 2x user's stated estimate"
+  related_violations:
+    - V008
+  examples:
+    bad: "User shows 5 lines, agent creates 400-line guide"
+    good: "User shows 5 lines, agent returns 5 modified lines"

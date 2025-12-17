@@ -1,0 +1,24 @@
+{
+  "session_id": "00000000-0000-0000-0000-000000000000",
+  "timestamp": "2026-02-07T00:00:00Z",
+  "metrics": {
+    "user_corrections": 0,
+    "unrequested_lines": 0,
+    "format_deviations": 0,
+    "apology_count": 0,
+    "frustration_signals": 0,
+    "test_without_output": 0,
+    "false_success_claims": 0,
+    "documentation_without_request": 0,
+    "scope_creep": 0,
+    "verification_skipped": 0
+  },
+  "session_metadata": {
+    "duration_minutes": 0,
+    "turns": 0,
+    "violations_documented": 0,
+    "llmcjf_functions_used": []
+  },
+  "calculated_score": 100,
+  "compliance_status": "PASS"
+}

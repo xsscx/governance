@@ -1,0 +1,266 @@
+# CMake Testing Protocol
+# Mandatory testing requirements for CMakeLists.txt modifications
+
+protocol_version: "1.0"
+created: "2026-02-06"
+trigger: "V013 - CMake STATIC_ONLY regression (4+ occurrences)"
+
+# ============================================================================
+# RULE CMAKE-001: Configuration Matrix Testing
+# ============================================================================
+cmake_001:
+  name: "Configuration Matrix Testing"
+  severity: CRITICAL
+  trigger: "Before committing any CMakeLists.txt changes"
+  
+  configurations_to_test:
+    - name: "STATIC_ONLY"
+      flags: "-DENABLE_SHARED_LIBS=OFF -DENABLE_STATIC_LIBS=ON"
+      common_failures:
+        - "Target doesn't exist (only NAME-static exists)"
+        - "Linking fails (looking for shared lib)"
+        
+    - name: "SHARED_ONLY"
+      flags: "-DENABLE_SHARED_LIBS=ON -DENABLE_STATIC_LIBS=OFF"
+      common_failures:
+        - "Target doesn't exist (only NAME exists)"
+        - "Static library not found"
+        
+    - name: "BOTH"
+      flags: "-DENABLE_SHARED_LIBS=ON -DENABLE_STATIC_LIBS=ON"
+      common_failures:
+        - "Target ambiguity"
+        - "Link order issues"
+  
+  testing_procedure:
+    step_1_identify:
+      description: "Identify which configurations are affected"
+      command: "grep -n 'ENABLE_SHARED_LIBS\\|ENABLE_STATIC_LIBS' CMakeLists.txt"
+      
+    step_2_test_locally:
+      description: "Test each configuration locally"
+      commands:
+        - "mkdir -p Build-test-static && cd Build-test-static"
+        - "cmake ../Cmake/ -DENABLE_SHARED_LIBS=OFF -DENABLE_STATIC_LIBS=ON"
+        - "make -j$(nproc)"
+        - "cd .."
+        - "mkdir -p Build-test-shared && cd Build-test-shared"
+        - "cmake ../Cmake/ -DENABLE_SHARED_LIBS=ON -DENABLE_STATIC_LIBS=OFF"
+        - "make -j$(nproc)"
+        - "cd .."
+        - "mkdir -p Build-test-both && cd Build-test-both"
+        - "cmake ../Cmake/ -DENABLE_SHARED_LIBS=ON -DENABLE_STATIC_LIBS=ON"
+        - "make -j$(nproc)"
+        - "cd .."
+        
+    step_3_verify_targets:
+      description: "Verify expected targets exist"
+      commands:
+        - "cmake --build Build-test-static --target help | grep TargetName"
+        - "cmake --build Build-test-shared --target help | grep TargetName"
+        - "cmake --build Build-test-both --target help | grep TargetName"
+        
+    step_4_verify_success:
+      description: "Verify builds complete without errors"
+      verification:
+        - "All 3 configurations build successfully"
+        - "No 'target does not exist' errors"
+        - "No linking errors"
+        - "Expected executables/libraries are created"
+  
+  forbidden_actions:
+    - action: "Commit without testing all configurations"
+      reason: "Different configurations have different targets/behaviors"
+      
+    - action: "Assume one config fix works for all"
+      reason: "STATIC_ONLY, SHARED_ONLY, BOTH have different target creation paths"
+      
+    - action: "Claim success without local verification"
+      reason: "CI failures take 5+ minutes to discover vs 30 seconds local test"
+
+# ============================================================================
+# RULE CMAKE-002: Target Consistency
+# ============================================================================
+cmake_002:
+  name: "Target Consistency Pattern"
+  severity: CRITICAL
+  trigger: "Creating conditional targets (IF(ENABLE_SHARED_LIBS) blocks)"
+  
+  anti_patterns:
+    - name: "Conditional target with unconditional reference"
+      bad_example: |
+        IF(ENABLE_SHARED_LIBS)
+          ADD_LIBRARY(MyTarget SHARED ${SOURCES})
+        ENDIF()
+        
+        # FAILS when ENABLE_SHARED_LIBS=OFF
+        GET_TARGET_PROPERTY(prop MyTarget OUTPUT_NAME)
+        
+      why_bad: "Target doesn't exist in some configurations"
+      
+  acceptable_patterns:
+    - name: "Guarded references"
+      example: |
+        IF(ENABLE_SHARED_LIBS)
+          ADD_LIBRARY(MyTarget SHARED ${SOURCES})
+          GET_TARGET_PROPERTY(prop MyTarget OUTPUT_NAME)
+        ENDIF()
+        
+      pros: "Target and references always in sync"
+      cons: "Duplicate code if target used in multiple places"
+      
+  recommended_patterns:
+    - name: "ALIAS target for consistency"
+      example: |
+        IF(ENABLE_SHARED_LIBS)
+          ADD_LIBRARY(MyTarget SHARED ${SOURCES})
+        ELSE()
+          ADD_LIBRARY(MyTarget-static STATIC ${SOURCES})
+          ADD_LIBRARY(MyTarget ALIAS MyTarget-static)
+        ENDIF()
+        
+        # Works in all configurations
+        GET_TARGET_PROPERTY(prop MyTarget OUTPUT_NAME)
+        
+      pros:
+        - "Target name consistent across all configurations"
+        - "No conditional guards needed for references"
+        - "Standard CMake pattern"
+        - "More maintainable"
+        
+      when_to_use: "When target is referenced outside creation block"
+      
+  verification:
+    - "Run cmake --build <dir> --target help in all configs"
+    - "Verify expected target name appears"
+    - "Verify no 'target does not exist' errors"
+
+# ============================================================================
+# RULE CMAKE-003: Verification Before Success
+# ============================================================================
+cmake_003:
+  name: "Verification Before Success Claim"
+  severity: CRITICAL
+  trigger: "Before claiming CMake fix works"
+  
+  mandatory_checks:
+    local_verification:
+      - step: "Identify failing configuration from CI logs"
+        command: "gh run view <run-id> --log | grep 'CMake Error'"
+        
+      - step: "Test fix in EXACT failing configuration"
+        example: "If STATIC_ONLY failed, test STATIC_ONLY locally"
+        
+      - step: "Verify error message is gone"
+        verification: "Build completes without the specific error reported"
+        
+      - step: "Verify build completes successfully"
+        verification: "Exit code 0, expected artifacts created"
+        
+    ci_verification:
+      - step: "Push fix and wait for workflow completion"
+        time_estimate: "5-10 minutes"
+        
+      - step: "Check ALL job statuses"
+        forbidden: "Checking only overall workflow status"
+        required: "Read each job's conclusion field"
+        
+      - step: "For any failures, read logs"
+        command: "gh run view <run-id> --job <job-id> --log"
+        
+      - step: "Verify specific error is gone"
+        verification: "Error message from original failure not present"
+        
+    success_criteria:
+      all_required:
+        - "Local build in failing config: PASS"
+        - "All CI configurations: PASS"
+        - "Original error message: GONE"
+        - "No new errors introduced"
+        
+  forbidden_success_claims:
+    - claim: "Fixed" when only tested one configuration
+      reason: "Other configurations may still fail"
+      
+    - claim: "Fixed" without reading CI logs
+      reason: "Workflow may show green but jobs failed"
+      
+    - claim: "Fixed" without verifying error message gone
+      reason: "Different error may have occurred"
+      
+    - claim: "Fixed" based on assumptions
+      reason: "Verification costs 30s, rework costs 10+ minutes"
+
+# ============================================================================
+# ENFORCEMENT
+# ============================================================================
+enforcement:
+  pre_commit:
+    - "Run cmake_test_all_configs.sh (creates Build-test-* directories)"
+    - "Verify all configs build successfully"
+    - "Verify expected targets exist"
+    
+  pre_push:
+    - "Local tests passed for all configurations"
+    - "Confidence level: 90%+ that CI will pass"
+    
+  post_push:
+    - "Monitor CI workflow progress"
+    - "Read logs for any failures"
+    - "Fix immediately if new failures occur"
+    
+  violation_response:
+    first_occurrence:
+      - "Create violation report"
+      - "Update VIOLATIONS_INDEX.md"
+      - "Document root cause"
+      
+    repeat_occurrence:
+      - "Escalate severity"
+      - "Update HALL_OF_SHAME.md"
+      - "Review why prevention didn't work"
+      - "Enhance prevention protocol"
+
+# ============================================================================
+# QUICK REFERENCE
+# ============================================================================
+quick_reference:
+  before_modifying_cmakelists:
+    - "Identify affected configurations (STATIC_ONLY, SHARED_ONLY, BOTH)"
+    - "Plan target creation strategy (prefer ALIAS pattern)"
+    - "Plan testing approach (all configs locally)"
+    
+  after_modifying_cmakelists:
+    - "Test STATIC_ONLY: cmake Cmake/ -DENABLE_SHARED_LIBS=OFF -DENABLE_STATIC_LIBS=ON"
+    - "Test SHARED_ONLY: cmake Cmake/ -DENABLE_SHARED_LIBS=ON -DENABLE_STATIC_LIBS=OFF"
+    - "Test BOTH: cmake Cmake/ -DENABLE_SHARED_LIBS=ON -DENABLE_STATIC_LIBS=ON"
+    - "Verify builds succeed in all 3 configurations"
+    
+  after_ci_failure:
+    - "Read logs: gh run view <run-id> --job <job-id> --log"
+    - "Identify exact error message"
+    - "Identify failing configuration"
+    - "Test fix locally in failing config FIRST"
+    - "Verify error gone, build succeeds"
+    - "Then push fix"
+
+# ============================================================================
+# METRICS
+# ============================================================================
+metrics:
+  time_cost:
+    local_config_test: "30 seconds per configuration"
+    ci_workflow_run: "5-10 minutes"
+    debugging_failure: "10-45 minutes"
+    
+  cost_benefit:
+    local_testing_all_configs: "90 seconds"
+    skipping_local_testing: "10-45 minutes rework + user frustration"
+    ratio: "6-30× more expensive to skip testing"
+    
+  violation_cost_v013:
+    occurrences: 4
+    time_per_occurrence: "~10 minutes"
+    total_time_wasted: "~45 minutes"
+    user_intervention_required: true
+    trust_damage: "SEVERE"

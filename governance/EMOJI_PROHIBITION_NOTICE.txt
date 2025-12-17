@@ -1,0 +1,58 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                        EMOJI PROHIBITION NOTICE                              ║
+║                          (ASCII-ONLY-OUTPUT Rule)                            ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+PROHIBITED IN ALL LLM OUTPUT:
+
+  [OK] [FAIL] [WARN]  [FIX] [NOTE] [DEPLOY] [IDEA] [TARGET] [STAR] [HOT]  (ALL EMOJI)
+  
+  - Unicode box drawing characters
+  - Unicode arrow characters
+  - Any non-ASCII decorative characters
+
+REQUIRED ASCII REPLACEMENTS:
+
+  [OK]  →  [OK]
+  [FAIL]  →  [FAIL]
+  [WARN]   →  [WARN]
+  [FIX]  →  [TOOL]
+  [NOTE]  →  [NOTE]
+  [DEPLOY]  →  [DEPLOY]
+  [IDEA]  →  [INFO]
+  [TARGET]  →  [TARGET]
+  [STAR]  →  [STAR]
+  [HOT]  →  [HOT]
+
+WHY THIS RULE EXISTS:
+
+  Violations V013, V014, V016:
+  - Claimed "removed all unicode icons" → NEVER TESTED
+  - User discovered emoji still present in output
+  - 60 minutes wasted (vs 30 seconds to test)
+  - 120× waste ratio
+
+  Technical Issues:
+  - Breaks terminal compatibility
+  - Fails text processing (grep/sed/awk)
+  - Incompatible with log analysis tools
+  - Poor accessibility (screen readers)
+  - Inconsistent cross-platform rendering
+
+ENFORCEMENT:
+
+  BEFORE claiming "removed emoji" or "ASCII-clean":
+  
+    grep -P '[\x80-\xFF]' output.txt || echo "[OK] ASCII-clean verified"
+  
+  BEFORE sending ANY output to user:
+  
+    file output.txt | grep -q "ASCII text" || echo "[FAIL] Non-ASCII detected"
+
+SEVERITY: HIGH
+VIOLATION TRACKING: Enabled
+GOVERNANCE SCORE PENALTY: -10 points per violation
+
+See: .copilot-sessions/governance/ASCII_ONLY_OUTPUT_RULE.md
+
+═══════════════════════════════════════════════════════════════════════════════
