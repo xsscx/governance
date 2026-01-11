@@ -1,0 +1,74 @@
+name: Governance Compliance Check
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'src/**'
+      - 'Makefile'
+
+jobs:
+  shell-prologue-compliance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          
+      - name: Check Shell Prologue Standards
+        shell: bash --noprofile --norc {0}
+        env:
+          BASH_ENV: /dev/null
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global credential.helper ""
+          unset GITHUB_TOKEN || true
+          
+          # Download governance checker
+          curl -sSL https://raw.githubusercontent.com/xsscx/llmcjf/main/scripts/check-shell-prologue.sh -o check.sh
+          chmod +x check.sh
+          
+          # Run compliance check
+          ./check.sh || exit 1
+          
+  compliance-score:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Calculate Session Compliance
+        shell: bash --noprofile --norc {0}
+        env:
+          BASH_ENV: /dev/null
+        run: |
+          set -euo pipefail
+          
+          # Count files changed
+          FILES_CHANGED=$(git diff --name-only ${{ github.event.pull_request.base.sha }} | wc -l)
+          
+          # Count total lines changed
+          LINES_CHANGED=$(git diff --stat ${{ github.event.pull_request.base.sha }} | tail -1 | awk '{print $4+$6}')
+          
+          echo "Files changed: $FILES_CHANGED"
+          echo "Lines changed: $LINES_CHANGED"
+          
+          # Check for unrequested changes (simple heuristic)
+          if [ "$LINES_CHANGED" -gt 500 ]; then
+            echo "⚠️  Warning: Large changeset ($LINES_CHANGED lines) - review for scope creep"
+          fi
+          
+          # Check for shell prologue in workflows
+          if ls .github/workflows/*.yml 1> /dev/null 2>&1; then
+            for workflow in .github/workflows/*.yml; do
+              if grep -q "shell: bash" "$workflow"; then
+                if ! grep -q "bash --noprofile --norc" "$workflow"; then
+                  echo "❌ $workflow: Missing bash prologue"
+                  exit 1
+                fi
+              fi
+            done
+          fi
+          
+          echo "✅ Governance compliance check passed"

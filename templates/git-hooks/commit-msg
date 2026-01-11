@@ -1,0 +1,27 @@
+#!/bin/bash
+# Commit Message Hook for Governance
+# Install: ln -s ~/.copilot/templates/git-hooks/commit-msg .git/hooks/commit-msg
+
+set -euo pipefail
+
+COMMIT_MSG_FILE="$1"
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Check for minimum message length
+if [ ${#COMMIT_MSG} -lt 10 ]; then
+    echo "❌ Commit message too short (min 10 characters)"
+    echo "Current: $COMMIT_MSG"
+    exit 1
+fi
+
+# Check for governance violation tags
+if echo "$COMMIT_MSG" | grep -qi "LLMCJF\|CJF-\|V-CRITICAL\|V-HIGH"; then
+    echo "ℹ️  Governance violation reference detected in commit message"
+fi
+
+# Warn about apology keywords
+if echo "$COMMIT_MSG" | grep -qi "sorry\|apologize\|my bad"; then
+    echo "⚠️  Warning: Apology detected in commit message (explain technically instead)"
+fi
+
+exit 0
