@@ -1,0 +1,23 @@
+
+# LLM Content Jockey Failure (CJF) Heuristics - Surveillance Integration
+
+cjf_heuristics:
+  - id: CJF-07
+    name: "No-op Echo Response"
+    description: >
+      The LLM re-emits user input with no transformation, substitution, or validation despite being prompted
+      for review or conditional modification. Suggests no execution of logical path analysis.
+    detection:
+      pattern: "re-emits prompt block verbatim"
+      context: "follow-up prompt requires review or conditional change"
+    mitigation: "Flag and require additional prompt; restrict emission scope."
+
+  - id: CJF-08
+    name: "Known-Good Structure Regression"
+    description: >
+      The LLM injects malformed substitutions into validated YAML, Makefile, or shell syntax,
+      breaking indentation, heredoc boundaries, or reserved syntax while attempting best-practice instrumentation.
+    detection:
+      pattern: "modifies indentation or formatting of a known-good config block"
+      context: "substitution or refactor prompt on CI, Makefile, or YAML"
+    mitigation: "Disable freeform generation for structured file types; require schema-validated patch."
