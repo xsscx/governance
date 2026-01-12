@@ -11,11 +11,11 @@ git clone https://github.com/xsscx/Commodity-Injection-Signatures.git
 rm -rf Commodity-Injection-Signatures/meta
 rm -rf Commodity-Injection-Signatures/rbl
 rm -rf Commodity-Injection-Signatures/parameter
-git clone https://github.com/xsscx/llmcjf.git
+git clone https://github.com/xsscx/governance.git
 copilot
 ```
 
-## Session Prompt
+## Example Session Prompt
 
 ```
 Please only make local Commits and DO NOT PUSH. 
@@ -31,7 +31,7 @@ Please indicate when to continue.
 
 ```
 ...
- ● I've consumed all files in llmcjf/**/*. The content documents anti-LLM Content Jockey (LLMCJF) framework aimed at preventing verbose, scope-creeping, and non-deterministic responses from LLMs.
+ ● I've consumed all Governance Documents. The content governance framework seeks to reduce & prevent the verbose, scope-creeping, and non-deterministic responses from LLMs.
 
    Key Control Surfaces Identified:
 
