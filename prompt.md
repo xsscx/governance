@@ -1,16 +1,10 @@
-## LLMCJF Prologue for Copilot | Unix
+## Governance Prompt Prologue for Copilot | Unix
 
 Hoyt's Copilot Governance Framework
 
 ```
 mkdir copilot
 cd copilot
-git clone %REPO%
-cd %dir%
-git clone https://github.com/xsscx/Commodity-Injection-Signatures.git
-rm -rf Commodity-Injection-Signatures/meta
-rm -rf Commodity-Injection-Signatures/rbl
-rm -rf Commodity-Injection-Signatures/parameter
 git clone https://github.com/xsscx/governance.git
 copilot
 ```
