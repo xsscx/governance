@@ -1,8 +1,19 @@
 # Hoyt's LLM Governance Framework
 
-**Version**: 2.1 (Signal-Optimized)  
+Last Updated: Mon Jan 12 10:58:21 EST 2026
+
+**Version**: 2.1
 **License**: GPL-3.0  
-**Purpose**: Prevent LLM Content Jockey behaviors through automated enforcement
+**Intent**: Prevent LLM behaviors through automated enforcement
+
+tl;dr Repository contains an operational Governance Framework for Large Langauge Model with emphasis on security research & defense.
+
+### Use Case
+### Security Research & Defense
+    - This package is used in all my current research
+    
+### Legal Industry 
+    - Trust, Estate & Financial Services
 
 ## Quick Start
 
