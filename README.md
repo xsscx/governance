@@ -6,7 +6,7 @@ Last Updated: Mon Jan 12 10:58:21 EST 2026
 **License**: GPL-3.0  
 **Intent**: Prevent LLM behaviors through automated enforcement
 
-tl;dr Repository contains an operational Governance Framework for Large Langauge Model with emphasis on security research & defense.
+tl;dr Repository contains an operational Governance Framework for Large Langauge Models with emphasis on security research & defense.
 
 ### Use Case
 ### Security Research & Defense
