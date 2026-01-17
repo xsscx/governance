@@ -26,6 +26,20 @@
     "safety": {
       "no_system_modification": true,
       "no_external_execution": true
+    },
+    "destructive_operations": {
+      "backup_verification": "mandatory",
+      "exit_code_checking": "required",
+      "file_integrity_check": "required",
+      "redundant_backup": "required",
+      "user_confirmation": "required",
+      "restoration_test": "required_before_deletion"
+    },
+    "error_handling": {
+      "check_exit_codes": true,
+      "verify_tool_output": true,
+      "never_assume_success": true,
+      "explicit_confirmation_required": true
     }
   }
 }

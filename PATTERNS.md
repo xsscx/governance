@@ -263,6 +263,30 @@ EOF
 
 ## Common Anti-Patterns to Avoid
 
+### ❌ Anti-Pattern: Destructive Operation Without Verification
+```powershell
+# WRONG - no verification before destructive operation
+wsl --export Ubuntu "backup.tar"
+Write-Host "Backup complete!"  # Assumed success without verification
+wsl --unregister Ubuntu  # DESTRUCTIVE - DATA LOSS RISK
+```
+
+### ✅ Correct: Verified Destructive Operation
+```powershell
+wsl --export Ubuntu "backup.tar"
+if ($LASTEXITCODE -ne 0) { exit 1 }
+if (-not (Test-Path "backup.tar")) { exit 1 }
+$Size = (Get-Item "backup.tar").Length
+if ($Size -eq 0) { exit 1 }
+# Create redundant backup
+Copy-Item "backup.tar" "backup-redundant.tar"
+# Get user confirmation
+Write-Host "Type 'PROCEED' to continue:"
+$Confirm = Read-Host
+if ($Confirm -ne "PROCEED") { exit 0 }
+wsl --unregister Ubuntu
+```
+
 ### ❌ Anti-Pattern: Verbose Session Start
 ```
 Hello! I'd be happy to help you with that. Let me start by understanding 
@@ -341,6 +365,9 @@ Correction: Use `named` service, not `bind9`.
 
 ## References
 
+- **Safe Operations**: `~/.copilot/templates/safe-operations/`
+  - `backup-verify-restore.md` - Destructive operation pattern
+  - `destructive-operation-checklist.md` - Pre-execution checklist
 - Governance: `~/.copilot/governance/COPILOT_GOVERNANCE.md`
 - Profiles: `~/.copilot/profiles/*.json`
 - Violations: `~/.copilot/enforcement/violation-patterns.md`

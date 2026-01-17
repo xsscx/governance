@@ -182,6 +182,63 @@ violations:
       compliance_score_penalty: -5
     example_fingerprint: "CJF-07 heuristic"
 
+  - id: V-CRITICAL-004
+    name: Destructive Operation Without Verification
+    severity: critical
+    category: data_safety
+    description: Destructive system operation executed without verified backup
+    evidence_pattern:
+      - Backup/export command executed
+      - File verification incomplete or absent
+      - Destructive operation executed immediately
+      - Data loss occurred or risked
+    detection:
+      - destructive_command: true
+      - backup_verified: false
+      - file_integrity_checked: false
+      - user_confirmation_obtained: false
+      - data_loss_risk: high
+    remediation:
+      - Verify backup file existence (Test-Path or [ -f ])
+      - Verify backup file size matches expected
+      - Verify backup integrity (checksum/hash)
+      - Create redundant backup in different location
+      - Require explicit user confirmation
+      - Test restoration before deleting original
+    cost_impact:
+      data_loss: permanent
+      trust_damage: total
+      compliance_score_penalty: -50
+    example_fingerprint: "WSL unregister without verified backup (17-JAN-2026)"
+
+  - id: V-CRITICAL-005
+    name: Exit Code Assumption Without Verification
+    severity: critical
+    category: error_handling
+    description: Tool success assumed without exit code verification
+    evidence_pattern:
+      - Long-running command executed
+      - Output truncated or incomplete
+      - Success assumed from partial output
+      - No exit code check performed
+      - Subsequent operation failed
+    detection:
+      - command_output_truncated: true
+      - exit_code_checked: false
+      - success_assumed: true
+      - subsequent_failure: true
+    remediation:
+      - Always check $LASTEXITCODE (PowerShell)
+      - Always check $? and exit code (Bash)
+      - Verify expected output file exists
+      - Never assume success from partial output
+      - Use explicit error handling
+    cost_impact:
+      iterations: varies
+      compliance_score_penalty: -40
+      cascading_failures: high
+    example_fingerprint: "wsl export assumed success from truncated output"
+
 # Heuristics for automated detection
 heuristics:
   correction_threshold: 3  # Violations likely if corrections >= 3

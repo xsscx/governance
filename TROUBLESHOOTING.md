@@ -266,7 +266,58 @@ export COPILOT_VIOLATIONS_LOG="/dev/shm/violations.jsonl"
 
 ---
 
-### Issue 8: BIND Not Starting (DNS Issue)
+### Issue 8: Data Loss from Destructive Operation
+
+**Symptoms:**
+- Destructive command executed without backup verification
+- Backup file missing or corrupted
+- Original data permanently deleted
+- No recovery possible
+
+**Prevention:**
+```powershell
+# ALWAYS follow safe destructive operation pattern
+# See: ~/.copilot/templates/safe-operations/backup-verify-restore.md
+
+# 1. Create backup
+wsl --export Ubuntu "backup.tar"
+
+# 2. MANDATORY verification
+if ($LASTEXITCODE -ne 0) { Write-Error "Backup failed"; exit 1 }
+if (-not (Test-Path "backup.tar")) { Write-Error "File missing"; exit 1 }
+if ((Get-Item "backup.tar").Length -eq 0) { Write-Error "Empty file"; exit 1 }
+
+# 3. Redundant backup
+Copy-Item "backup.tar" "backup-redundant.tar"
+
+# 4. User confirmation
+Write-Host "Type 'PROCEED' to continue:"
+$Confirm = Read-Host
+if ($Confirm -ne "PROCEED") { exit 0 }
+
+# 5. Execute destructive operation
+wsl --unregister Ubuntu
+```
+
+**Recovery (if too late):**
+- Check Recycle Bin
+- Use file recovery software on source drive
+- Restore from system backups (if enabled)
+- Contact data recovery service (expensive)
+
+**Violations:**
+- V-CRITICAL-004: Destructive Operation Without Verification
+- V-CRITICAL-005: Exit Code Assumption
+- CJF-09: Destructive Operation Without Verified Backup
+
+**Reference:**
+- Post-Mortem: `~/.copilot/reports/LLMCJF_PostMortem_17JAN2026_WSL_Data_Loss.md`
+- Pattern: `~/.copilot/templates/safe-operations/backup-verify-restore.md`
+- Checklist: `~/.copilot/templates/safe-operations/destructive-operation-checklist.md`
+
+---
+
+### Issue 9: BIND Not Starting (DNS Issue)
 
 **Symptoms:**
 - service named status shows "not running"

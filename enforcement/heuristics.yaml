@@ -21,3 +21,19 @@ cjf_heuristics:
       pattern: "modifies indentation or formatting of a known-good config block"
       context: "substitution or refactor prompt on CI, Makefile, or YAML"
     mitigation: "Disable freeform generation for structured file types; require schema-validated patch."
+
+  - id: CJF-09
+    name: "Destructive Operation Without Verified Backup"
+    description: >
+      The LLM executes destructive system operation (delete, unregister, format, drop table, etc.)
+      without explicit verification of backup integrity and user confirmation. Results in permanent data loss.
+    detection:
+      pattern: "destructive command executed without backup verification"
+      context: "backup/export command followed immediately by delete/unregister"
+      preconditions_met: false
+      verification_performed: false
+    mitigation: >
+      HALT before destructive operation.
+      Require: (1) backup file existence check, (2) file size verification, (3) integrity check (hash),
+      (4) redundant backup in different location, (5) explicit user approval, (6) test restoration.
+      Never proceed with destructive operation based on assumed success or partial tool output.
