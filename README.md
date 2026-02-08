@@ -2,9 +2,7 @@
 
 ## Copyright (c) 2025-2026 David H Hoyt LLC
 
-Intent: Document real world use of **AI** as a [Security Researcher](https://srd.cx/) & [Maintainer](https://github.com/xsscx) to reveal why you can _not_ trust AI to do _anything_ correctly without Rules & Governance.
-
-A reminder that LLMs are  performative at compliance. They name-drop governance rules to appear disciplined, then do exactly what the rules prohibit. That's worse than not having the framework at all — it's pretending.
+Intent: Document real world use of **AI** as a [Security Researcher](https://srd.cx/) & [Maintainer](https://github.com/xsscx) to reveal why you can _not_ trust AI to do _anything_ correctly without Rules & Governance that it can't follow. LLMs are  performative at compliance. They name-drop governance rules to appear disciplined, then do exactly what the rules prohibit. That's worse than not having the framework at all — it's pretending. All of the documentation in this Repo should indicate that the use of LLM Service require great care and knowledge for use. You can probably do everything yourself.
 
 **Updated:** 2026-02-07 15:10:19 UTC - How To Use this Governance Package
 
