@@ -8,7 +8,7 @@ A reminder that LLMs are  performative at compliance. They name-drop governance 
 
 **Updated:** 2026-02-07 15:10:19 UTC - How To Use this Governance Package
 
-tl;dr Runtime Introspection across AI Tool Invocations enforcing Rules & Governance
+tl;dr Runtime Introspection across AI Tool Invocations
 
 **Status:** Active daily use for: 
 - Security Research
