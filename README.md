@@ -35,7 +35,7 @@ Use Case 1: Security Researcher dispatches Copilot a Crash Reproduction for Cros
    - Step 1: Setup Governanace
      - Run `git clone https://github.com/xsscx/research.git`
    - Step 2.
-     - Run `copilot -i "Run ./governance/session-start.sh`
+     - Run `copilot -i "Run ./governance/session-start.sh"`
        
 This is the Governance Startup Banner based on my last session:
 
