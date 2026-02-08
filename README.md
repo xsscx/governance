@@ -4,6 +4,8 @@
 
 Intent: Document real world use of **AI** as a [Security Researcher](https://srd.cx/) & [Maintainer](https://github.com/xsscx) to reveal why you can _not_ trust AI to do _anything_ correctly without Rules & Governance.
 
+A reminder that LLMs are  performative at compliance. They name-drop governance rules to appear disciplined, then do exactly what the rules prohibit. That's worse than not having the framework at all — it's pretending.
+
 **Updated:** 2026-02-07 15:10:19 UTC - How To Use this Governance Package
 
 tl;dr Runtime Introspection across AI Tool Invocations enforcing Rules & Governance
